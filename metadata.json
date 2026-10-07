@@ -1,0 +1,6 @@
+{
+  "name": "RedHack AI - Cybersecurity Companion & Threat Operations",
+  "description": "AI-powered offensive, defensive, and educational cybersecurity companion for threat monitoring, automated vulnerability report generation, real-time alert triage, and incident response.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
