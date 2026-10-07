@@ -2,13 +2,39 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { generalRateLimiter, aiExecutionRateLimiter, authRateLimiter } from "./src/server/rateLimiter";
+import { authenticate, requirePermission, enforceTenantIsolation, PERMISSIONS } from "./src/server/rbac";
+import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
+import { checkDatabaseHealth, runDatabaseMigrations } from "./src/db/postgres";
+import { connectorRegistry } from "./src/server/integrations";
+import { productionAgentRunner } from "./src/server/agentRunner";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: "10mb" }));
+// Production Security Headers
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:;"
+  );
+  next();
+});
+
+// JSON Body Parser with safe payload limit
+app.use(express.json({ limit: "5mb" }));
+
+// General API Rate Limiter
+app.use("/api", generalRateLimiter.middleware(150, 60000));
+
+// Attach Auth & Tenant Context to API routes
+app.use("/api", authenticate as any);
 
 // Lazy GoogleGenAI client
 let aiClient: GoogleGenAI | null = null;
@@ -1219,16 +1245,27 @@ app.get("/api/v2/agents/runs", (req, res) => {
   res.json(enterpriseStore.getAgentRuns());
 });
 
-app.post("/api/v2/agents/run", (req, res) => {
-  const { agentCodeName, triggerType, inputContext, invokedBy } = req.body;
-  if (!agentCodeName) return res.status(400).json({ error: "agentCodeName is required" });
-  const run = enterpriseStore.createAgentRun(
-    agentCodeName,
-    triggerType || "MANUAL",
-    inputContext || {},
-    invokedBy || "user-marcus"
-  );
-  res.json(run);
+app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), async (req: any, res) => {
+  const { agentCodeName, triggerType, inputContext } = req.body;
+  if (!agentCodeName) return res.status(400).json({ error: "agentCodeName is required", code: "INVALID_INPUT" });
+
+  try {
+    const result = await productionAgentRunner.executeAgent({
+      agentCodeName,
+      triggerType: triggerType || "MANUAL",
+      inputContext: inputContext || {},
+      userId: req.user?.userId || "usr-operator",
+      userRole: req.user?.role || "L1_ANALYST",
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error("[AGENT RUNNER ERROR]", err);
+    res.status(400).json({
+      error: err.message || "Agent execution failed",
+      code: "AGENT_EXECUTION_ERROR",
+      agentCodeName,
+    });
+  }
 });
 
 // Evidence Center
@@ -1304,7 +1341,155 @@ app.post("/api/v2/ai-security/audit", (req, res) => {
   res.json(result);
 });
 
-// Vite & Static file serving
+// ============================================================================
+// PRODUCTION HEALTH, AUTH, DATABASE & INTEGRATIONS API ENDPOINTS
+// ============================================================================
+
+// Production Health Check & Monitoring Hooks
+app.get("/api/health", async (req, res) => {
+  const dbHealth = await checkDatabaseHealth();
+  const connectorStatuses = await connectorRegistry.getStatuses();
+
+  const isHealthy = dbHealth.isConnected || dbHealth.driver === "in-memory-fallback";
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: dbHealth.isConnected ? "healthy" : "degraded_in_memory_fallback",
+    version: "2.1.0",
+    service: "RedHack AI Enterprise Cyber Operations Platform",
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    database: dbHealth,
+    integrations: connectorStatuses,
+    activeWorkspace: enterpriseStore.getActiveWorkspace().id,
+    securityPostureGrade: enterpriseStore.calculateSecurityScore().letterGrade,
+    memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+  });
+});
+
+// Production Authentication: Login & Token Issuance
+app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required", code: "INVALID_CREDENTIALS" });
+  }
+
+  const users = enterpriseStore.getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+
+  if (!user) {
+    return res.status(401).json({ error: "Invalid credentials", code: "AUTH_FAILED" });
+  }
+
+  // Generate cryptographically signed token
+  const userRole = user.roleName || user.role || "L1_ANALYST";
+  const userOrg = user.defaultOrganizationId || user.organizationId || "org-defense-corp";
+  const userName = user.fullName || user.name || "Operator";
+  const userPerms = user.permissions || [];
+
+  const token = signAuthToken({
+    userId: user.id,
+    email: user.email,
+    role: userRole,
+    organizationId: userOrg,
+    workspaceId: enterpriseStore.getActiveWorkspace().id,
+    permissions: userPerms,
+  });
+
+  enterpriseStore.logAuditEvent(
+    user.id,
+    "USER",
+    userName,
+    "USER_LOGIN_SUCCESS",
+    "ORGANIZATION",
+    userOrg,
+    { email: user.email, role: userRole }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: userName,
+      email: user.email,
+      role: userRole,
+      organizationId: userOrg,
+      permissions: userPerms,
+    },
+  });
+});
+
+// Authenticated User Identity Context
+app.get("/api/v2/auth/me", (req: any, res) => {
+  res.json({
+    user: req.user,
+    tenantContext: req.tenantContext,
+  });
+});
+
+// Database Status & Migrations
+app.get("/api/v2/database/status", async (req, res) => {
+  const status = await checkDatabaseHealth();
+  res.json(status);
+});
+
+app.post("/api/v2/database/migrate", async (req: any, res) => {
+  // Only Super Admins or SOC Leads can trigger schema migrations
+  if (req.user?.role !== "SUPER_ADMIN" && req.user?.role !== "SOC_LEAD") {
+    return res.status(403).json({ error: "Forbidden: Super Admin or SOC Lead required", code: "PERMISSION_DENIED" });
+  }
+
+  const result = await runDatabaseMigrations();
+  res.json(result);
+});
+
+// Real Integrations Connectors
+app.get("/api/v2/integrations", async (req, res) => {
+  const statuses = await connectorRegistry.getStatuses();
+  res.json(statuses);
+});
+
+app.post("/api/v2/integrations/:id/test", async (req, res) => {
+  const connector = connectorRegistry.get(req.params.id);
+  if (!connector) {
+    return res.status(404).json({ error: "Connector not found", code: "CONNECTOR_NOT_FOUND" });
+  }
+
+  const result = await connector.testConnection(req.body.config || {});
+  res.json(result);
+});
+
+app.post("/api/v2/integrations/:id/sync", async (req: any, res) => {
+  const connector = connectorRegistry.get(req.params.id);
+  if (!connector) {
+    return res.status(404).json({ error: "Connector not found", code: "CONNECTOR_NOT_FOUND" });
+  }
+
+  const activeWs = req.tenantContext?.workspaceId || enterpriseStore.getActiveWorkspace().id;
+  const result = await connector.sync(activeWs);
+
+  enterpriseStore.logAuditEvent(
+    req.user?.userId || "usr-operator",
+    "CONNECTOR",
+    connector.name,
+    "INTEGRATION_SYNC_COMPLETED",
+    "INTEGRATION",
+    connector.id,
+    result
+  );
+
+  res.json(result);
+});
+
+// Centralized Safe Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("[GLOBAL SERVER ERROR]", err);
+  const isDev = process.env.NODE_ENV !== "production";
+  res.status(err.status || 500).json({
+    error: isDev ? err.message : "Internal Server Error",
+    code: err.code || "INTERNAL_ERROR",
+    timestamp: new Date().toISOString(),
+  });
+});
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

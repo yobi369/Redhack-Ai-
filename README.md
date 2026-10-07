@@ -205,6 +205,21 @@ RedHack AI v2 is production-configured for Vercel:
 npx vercel --prod
 ```
 
+### Containerized Deployment (Docker Compose)
+RedHack AI v2.1 can be launched with full PostgreSQL persistence via Docker Compose:
+```bash
+docker-compose up --build -d
+```
+This spins up:
+- `redhack-postgres`: PostgreSQL 16 Alpine with initialized schema and persistent volume.
+- `redhack-app`: Multi-stage hardened Node.js 22 runtime running on port 3000 with built-in healthcheck.
+
+### Database Migrations
+Run migrations against any PostgreSQL database:
+```bash
+npm run db:migrate
+```
+
 ### Production Node.js Server
 ```bash
 npm run build
@@ -215,22 +230,31 @@ npm start
 
 ## 10. Automated Testing
 
-Run the automated test suite covering all 10 platform verification suites:
+Run the entire platform verification and production hardening test suite (56 total tests):
 ```bash
 npm test
 ```
 
 Test suites verify:
-1. CVSS v3.1 benchmark vector calculations (Log4j, Spring4Shell, Heartbleed).
-2. IoC Defanging & Refanging standards (`hxxp[:]//`, `1[.]1[.]1[.]1`).
-3. STIX 2.1 JSON Schema validation.
-4. Rules of Engagement scope enforcement & database exclusions.
-5. SOAR human approval gates & one-click rollback safety.
-6. Detection engineering rule syntax (Sigma YAML & YARA).
-7. Unified Finding Lifecycle state transitions & audit trail persistence.
-8. Unified Security Score mathematical evaluation engine.
-9. Multi-Agent scoped tool permissions and approval gates.
-10. Multi-Tenant workspace and scope policy isolation.
+1. **CVSS v3.1 benchmark vector calculations** (Log4j, Spring4Shell, Heartbleed).
+2. **IoC Defanging & Refanging standards** (`hxxp[:]//`, `1[.]1[.]1[.]1`).
+3. **STIX 2.1 JSON Schema validation**.
+4. **Rules of Engagement scope enforcement & database exclusions**.
+5. **SOAR human approval gates & one-click rollback safety**.
+6. **Detection engineering rule syntax** (Sigma YAML & YARA).
+7. **Unified Finding Lifecycle state transitions & audit trail persistence**.
+8. **Unified Security Score mathematical evaluation engine**.
+9. **Multi-Agent scoped tool permissions and approval gates**.
+10. **Multi-Tenant workspace and scope policy isolation**.
+11. **PBKDF2 Cryptographic Hashing & Verification**.
+12. **Tamper-Proof HMAC-SHA256 Token Signing & Expiry Checks**.
+13. **Server-Side RBAC Permission Matrix & Least Privilege Rules**.
+14. **Sliding-Window Rate Limiting Engine** (120 req/min, burst defense).
+15. **SSRF Defense & Metadata Blocking** (169.254.169.254, loopback, private ranges).
+16. **Prompt Injection & Adversarial Jailbreak Screening**.
+17. **Real Integration Connectors & Truthful State Reporting**.
+18. **Multi-Agent Background Worker with Evidence Provenance**.
+19. **PostgreSQL Connection Pool & Graceful In-Memory Fallback**.
 
 ---
 

@@ -76,6 +76,10 @@ export interface User {
   defaultWorkspaceId: string;
   isActive: boolean;
   lastLoginAt?: string;
+  name?: string;
+  role?: string;
+  organizationId?: string;
+  permissions?: string[];
 }
 
 export interface Project {
@@ -93,6 +97,7 @@ export type AssetType =
   | "server"
   | "database"
   | "cloud_workload"
+  | "workload"
   | "api_gateway"
   | "ai_model_service"
   | "mcp_server"
@@ -110,7 +115,7 @@ export interface Asset {
   assetType: AssetType;
   ipAddress?: string;
   hostname?: string;
-  cloudProvider?: "AWS" | "GCP" | "Azure" | "On-Premise";
+  cloudProvider?: "AWS" | "GCP" | "Azure" | "On-Premise" | "Private Lab";
   exposure: ExposureLevel;
   businessCriticality: BusinessCriticality;
   ownerTeam: string;
@@ -324,12 +329,16 @@ export interface SpecializedAgent {
   id: string;
   codeName: AgentCodeName;
   displayName: string;
+  name?: string;
   roleDescription: string;
   permissionScope: string[];
+  scopedTools?: string[];
   availableTools: AgentToolDefinition[];
   requiresHumanApprovalFor: string[];
   isActive: boolean;
 }
+
+export type SecurityAgent = SpecializedAgent;
 
 export interface AgentRunPendingApproval {
   actionName: string;
@@ -349,6 +358,8 @@ export interface AgentRun {
   status: "RUNNING" | "WAITING_FOR_HUMAN_APPROVAL" | "COMPLETED" | "FAILED" | "REVOKED";
   inputContext: Record<string, any>;
   outputResult?: Record<string, any>;
+  output?: any;
+  notes?: string;
   approvalPendingAction?: AgentRunPendingApproval;
   toolCalls: Array<{
     toolName: string;
@@ -410,7 +421,7 @@ export interface AuditEvent {
   id: string;
   workspaceId: string;
   actorId: string;
-  actorType: "USER" | "AGENT" | "SYSTEM";
+  actorType: "USER" | "AGENT" | "SYSTEM" | "CONNECTOR" | "SECURITY_CONTROLS";
   actorName: string;
   action: string;
   targetType: string;

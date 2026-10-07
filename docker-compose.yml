@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  redhack-postgres:
+    image: postgres:16-alpine
+    container_name: redhack-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: redhack_admin
+      POSTGRES_PASSWORD: enterprise_secure_password_2026
+      POSTGRES_DB: redhack_enterprise
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redhack_admin -d redhack_enterprise"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redhack-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redhack-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://redhack_admin:enterprise_secure_password_2026@redhack-postgres:5432/redhack_enterprise
+      JWT_SECRET: production-grade-cryptographic-salt-change-in-prod-2026
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      redhack-postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
