@@ -21,22 +21,26 @@ var SlidingWindowRateLimiter = class {
       }
     }
   }
-  check(key) {
+  check(key, limitOverride, windowOverride) {
     const now = Date.now();
+    const effectiveLimit = limitOverride ?? this.maxRequests;
+    const effectiveWindow = windowOverride ?? this.windowMs;
     let record = this.records.get(key);
     if (!record) {
       record = { timestamps: [] };
       this.records.set(key, record);
     }
-    record.timestamps = record.timestamps.filter((t) => now - t < this.windowMs);
-    if (record.timestamps.length >= this.maxRequests) {
+    record.timestamps = record.timestamps.filter((t) => now - t < effectiveWindow);
+    if (record.timestamps.length >= effectiveLimit) {
       const oldest = record.timestamps[0];
-      const resetTime = Math.ceil((oldest + this.windowMs - now) / 1e3);
-      return { allowed: false, remaining: 0, resetTime: Math.max(1, resetTime) };
+      const resetTime = Math.ceil((oldest + effectiveWindow - now) / 1e3);
+      const waitSec = Math.max(1, resetTime);
+      return { allowed: false, remaining: 0, resetTime: waitSec, retryAfterSeconds: waitSec };
     }
     record.timestamps.push(now);
-    const remaining = this.maxRequests - record.timestamps.length;
-    return { allowed: true, remaining, resetTime: Math.ceil(this.windowMs / 1e3) };
+    const remaining = Math.max(0, effectiveLimit - record.timestamps.length);
+    const defaultReset = Math.ceil(effectiveWindow / 1e3);
+    return { allowed: true, remaining, resetTime: defaultReset, retryAfterSeconds: defaultReset };
   }
   middleware(limit, windowMs) {
     const activeMax = limit || this.maxRequests;
@@ -66,7 +70,34 @@ var authRateLimiter = new SlidingWindowRateLimiter(6e4, 15);
 
 // src/server/security.ts
 import crypto from "crypto";
-var JWT_SECRET = process.env.JWT_SECRET || "redhack-production-enterprise-secret-salt-2026";
+var INSECURE_PLACEHOLDER_SECRETS = /* @__PURE__ */ new Set([
+  "redhack-production-enterprise-secret-salt-2026",
+  "replace-with-cryptographically-secure-random-string-in-production",
+  "secret",
+  "changeme",
+  "123456",
+  "password"
+]);
+var _ephemeralDevelopmentSecret = null;
+function getJwtSecret() {
+  const envSecret = process.env.JWT_SECRET?.trim();
+  const isProduction2 = process.env.NODE_ENV === "production";
+  if (isProduction2) {
+    if (!envSecret || envSecret.length < 32 || INSECURE_PLACEHOLDER_SECRETS.has(envSecret)) {
+      throw new Error(
+        "FATAL CONFIGURATION ERROR: In production mode (NODE_ENV=production), JWT_SECRET must be supplied externally via environment variable and must be at least 32 characters long. Insecure or default placeholder secrets are rejected."
+      );
+    }
+    return envSecret;
+  }
+  if (envSecret && envSecret.length >= 16 && !INSECURE_PLACEHOLDER_SECRETS.has(envSecret)) {
+    return envSecret;
+  }
+  if (!_ephemeralDevelopmentSecret) {
+    _ephemeralDevelopmentSecret = crypto.randomBytes(32).toString("hex");
+  }
+  return _ephemeralDevelopmentSecret;
+}
 var TOKEN_TTL_SECONDS = 3600 * 8;
 function signAuthToken(payload) {
   const iat = Math.floor(Date.now() / 1e3);
@@ -74,7 +105,8 @@ function signAuthToken(payload) {
   const fullPayload = { ...payload, iat, exp };
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(fullPayload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", JWT_SECRET).update(`${header}.${body}`).digest("base64url");
+  const secret = getJwtSecret();
+  const signature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
   return `${header}.${body}.${signature}`;
 }
 function verifyAuthToken(token) {
@@ -84,17 +116,13 @@ function verifyAuthToken(token) {
       return { valid: false, error: "Malformed token structure" };
     }
     const [header, body, signature] = parts;
-    const expectedSignature = crypto.createHmac("sha256", JWT_SECRET).update(`${header}.${body}`).digest("base64url");
-    const validSig = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const secret = getJwtSecret();
+    const expectedSignature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
+    const validSig = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
     if (!validSig) {
       return { valid: false, error: "Invalid signature" };
     }
-    const payload = JSON.parse(
-      Buffer.from(body, "base64url").toString("utf8")
-    );
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp < now) {
       return { valid: false, error: "Token expired" };
@@ -1679,6 +1707,8 @@ var ProductionAgentRunner = class {
     agentRun.status = "COMPLETED";
     agentRun.completedAt = (/* @__PURE__ */ new Date()).toISOString();
     agentRun.output = executionOutput;
+    agentRun.confidenceScore = executionOutput.confidence ?? 0.95;
+    agentRun.evidenceItems = executionOutput.evidenceArtifacts || [];
     enterpriseStore.logAuditEvent(
       agent.codeName,
       "AGENT",
@@ -1802,7 +1832,12 @@ var ProductionAgentRunner = class {
           formatsGenerated: ["MARKDOWN", "JSON", "HTML", "CSV"],
           confidence: 1,
           confidenceLevel: "HIGH",
-          evidenceArtifacts: [{ reportId: "REP-2026-OCT-EXEC", checksum: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069" }],
+          evidenceArtifacts: [
+            {
+              reportId: "REP-2026-OCT-EXEC",
+              checksum: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
+            }
+          ],
           modelAudit: { latencyMs: Date.now() - startTime, tokens: 460 }
         };
       case "ai_security_agent":
@@ -1834,20 +1869,155 @@ var ProductionAgentRunner = class {
 var productionAgentRunner = new ProductionAgentRunner();
 
 // server.ts
+import helmet from "helmet";
+
+// src/server/logger.ts
+import pino from "pino";
+import crypto2 from "crypto";
+var isTest = process.env.NODE_ENV === "test";
+var isProduction = process.env.NODE_ENV === "production";
+var baseLogger = pino({
+  level: isTest ? "silent" : isProduction ? "info" : "debug",
+  redact: {
+    paths: [
+      "req.headers.authorization",
+      "req.headers.cookie",
+      "req.headers['x-api-key']",
+      "password",
+      "token",
+      "secret",
+      "apiKey",
+      "rawKey",
+      "jwt",
+      "*.password",
+      "*.token",
+      "*.secret",
+      "*.apiKey",
+      "*.rawKey"
+    ],
+    censor: "[REDACTED]"
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+  base: {
+    service: "redhack-ai-core",
+    version: "2.1.0",
+    env: process.env.NODE_ENV || "development"
+  }
+});
+var AppLogger = class _AppLogger {
+  constructor(context = {}) {
+    this.context = context;
+  }
+  child(childContext) {
+    return new _AppLogger({ ...this.context, ...childContext });
+  }
+  info(message, meta) {
+    baseLogger.info({ ...this.context, ...meta }, message);
+  }
+  warn(message, meta) {
+    baseLogger.warn({ ...this.context, ...meta }, message);
+  }
+  error(message, error, meta) {
+    const errorDetails = error instanceof Error ? { errorMessage: error.message, errorName: error.name, stack: isProduction ? void 0 : error.stack } : { rawError: String(error) };
+    baseLogger.error({ ...this.context, ...errorDetails, ...meta }, message);
+  }
+  debug(message, meta) {
+    baseLogger.debug({ ...this.context, ...meta }, message);
+  }
+};
+var logger = new AppLogger();
+function generateCorrelationId() {
+  return crypto2.randomUUID ? crypto2.randomUUID() : `corr-${Date.now()}-${crypto2.randomBytes(6).toString("hex")}`;
+}
+
+// src/server/config.ts
+function validateEnvironment() {
+  const errors = [];
+  const warnings = [];
+  const rawEnv = (process.env.NODE_ENV || "development").toLowerCase();
+  const isProduction2 = rawEnv === "production";
+  const isTest2 = rawEnv === "test";
+  const port = parseInt(process.env.PORT || "3000", 10);
+  if (isNaN(port) || port < 1 || port > 65535) {
+    errors.push(`PORT must be a valid integer between 1 and 65535. Received: "${process.env.PORT}"`);
+  }
+  try {
+    getJwtSecret();
+  } catch (err) {
+    errors.push(err.message || "JWT_SECRET validation failed.");
+  }
+  const dbUrl = process.env.DATABASE_URL?.trim();
+  if (dbUrl) {
+    if (!dbUrl.startsWith("postgresql://") && !dbUrl.startsWith("postgres://")) {
+      errors.push("DATABASE_URL must be a valid PostgreSQL connection URI starting with postgresql:// or postgres://");
+    }
+  } else if (isProduction2) {
+    warnings.push("DATABASE_URL not set in production. System is falling back to transactional in-memory store.");
+  }
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const hasGeminiKey = Boolean(geminiKey && geminiKey !== "MY_GEMINI_API_KEY");
+  if (!hasGeminiKey && isProduction2) {
+    warnings.push(
+      "GEMINI_API_KEY is not configured. Real-time AI agent inference will operate in deterministic local simulation mode."
+    );
+  }
+  const summary = {
+    nodeEnv: rawEnv,
+    port: isNaN(port) ? 3e3 : port,
+    hasDatabaseUrl: Boolean(dbUrl),
+    hasGeminiKey,
+    isProduction: isProduction2,
+    isTest: isTest2,
+    version: "2.1.0"
+  };
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary
+  };
+}
+function getConfig() {
+  const rawEnv = (process.env.NODE_ENV || "development").toLowerCase();
+  const nodeEnv = rawEnv === "production" ? "production" : rawEnv === "test" ? "test" : "development";
+  const port = parseInt(process.env.PORT || "3000", 10);
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  return {
+    nodeEnv,
+    port: isNaN(port) ? 3e3 : port,
+    databaseUrl: process.env.DATABASE_URL?.trim(),
+    hasGeminiKey: Boolean(geminiKey && geminiKey !== "MY_GEMINI_API_KEY"),
+    isProduction: nodeEnv === "production",
+    isTest: nodeEnv === "test",
+    version: "2.1.0"
+  };
+}
+
+// server.ts
 dotenv.config();
 var app = express();
-var PORT = 3e3;
+var PORT = parseInt(process.env.PORT || "3000", 10);
 app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:;"
-  );
+  const correlationId = req.headers["x-correlation-id"] || generateCorrelationId();
+  req.headers["x-correlation-id"] = correlationId;
+  res.setHeader("X-Correlation-ID", correlationId);
   next();
 });
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https:"]
+      }
+    },
+    crossOriginEmbedderPolicy: false
+  })
+);
 app.use(express.json({ limit: "5mb" }));
 app.use("/api", generalRateLimiter.middleware(150, 6e4));
 app.use("/api", authenticate);
@@ -2412,7 +2582,32 @@ app.post("/api/soar/rollback", (req, res) => {
 app.get("/api/governance/audit-logs", (req, res) => {
   return res.json({ logs: auditLogsStore });
 });
-app.get("/api/health", (req, res) => {
+app.get(["/healthz", "/api/healthz"], (req, res) => {
+  return res.status(200).json({
+    status: "ALIVE",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+});
+app.get(["/readyz", "/api/readyz"], async (req, res) => {
+  const config = getConfig();
+  const dbHealth = await checkDatabaseHealth();
+  if (config.databaseUrl && !dbHealth.isConnected) {
+    logger.warn("Readiness probe check failed: Database configured but unreachable", { dbHealth });
+    return res.status(503).json({
+      status: "NOT_READY",
+      reason: "Database dependency unreachable",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  return res.status(200).json({
+    status: "READY",
+    database: dbHealth.isConnected ? "postgresql" : "in_memory_resilient",
+    version: "2.1.0",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+});
+app.get(["/health", "/api/health"], (req, res) => {
   return res.json({
     status: "HEALTHY",
     uptimeSeconds: Math.floor(process.uptime()),
@@ -2421,7 +2616,8 @@ app.get("/api/health", (req, res) => {
     activeSimulations: activeSimulationsRunning ? 1 : 0,
     emergencyStopActive: simulationEmergencyStopActive,
     totalIngestedEvents: telemetryEventsStore.length,
-    activeCases: socCasesStore.length
+    activeCases: socCasesStore.length,
+    version: "2.1.0"
   });
 });
 app.post("/api/chat", async (req, res) => {
@@ -3056,15 +3252,28 @@ app.post("/api/v2/integrations/:id/sync", async (req, res) => {
   res.json(result);
 });
 app.use((err, req, res, next) => {
-  console.error("[GLOBAL SERVER ERROR]", err);
+  const correlationId = req.headers["x-correlation-id"] || "unknown";
+  logger.error("API Request Unhandled Error", err, { correlationId, path: req.path, method: req.method });
   const isDev = process.env.NODE_ENV !== "production";
   res.status(err.status || 500).json({
     error: isDev ? err.message : "Internal Server Error",
     code: err.code || "INTERNAL_ERROR",
+    correlationId,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
 async function setupVite() {
+  const validation = validateEnvironment();
+  if (!validation.valid) {
+    logger.error("Fatal startup configuration errors detected:", void 0, { errors: validation.errors });
+    if (process.env.NODE_ENV === "production") {
+      logger.error("Startup aborted due to invalid production security configuration.");
+      process.exit(1);
+    }
+  }
+  if (validation.warnings.length > 0) {
+    validation.warnings.forEach((warn) => logger.warn(`Configuration warning: ${warn}`));
+  }
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -3080,10 +3289,14 @@ async function setupVite() {
     });
   }
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[REDHACK SOC PLATFORM] Server active on http://0.0.0.0:${PORT}`);
+    logger.info(`RedHack AI SecOps Platform active on port ${PORT}`, {
+      port: PORT,
+      env: process.env.NODE_ENV || "development",
+      version: "2.1.0"
+    });
   });
 }
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && !process.env.VITEST && process.env.NODE_ENV !== "test") {
   setupVite();
 }
 var server_default = app;

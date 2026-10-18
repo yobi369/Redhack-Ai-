@@ -9,23 +9,39 @@ import { checkDatabaseHealth, runDatabaseMigrations } from "./src/db/postgres";
 import { connectorRegistry } from "./src/server/integrations";
 import { productionAgentRunner } from "./src/server/agentRunner";
 
+import helmet from "helmet";
+import { logger, generateCorrelationId } from "./src/server/logger";
+import { validateEnvironment, getConfig } from "./src/server/config";
+
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
-// Production Security Headers
+// Request Correlation ID Middleware
 app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:;"
-  );
+  const correlationId = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
+  req.headers["x-correlation-id"] = correlationId;
+  res.setHeader("X-Correlation-ID", correlationId);
   next();
 });
+
+// Production Security Headers via Helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https:"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // JSON Body Parser with safe payload limit
 app.use(express.json({ limit: "5mb" }));
@@ -729,7 +745,34 @@ app.get("/api/governance/audit-logs", (req, res) => {
   return res.json({ logs: auditLogsStore });
 });
 
-app.get("/api/health", (req, res) => {
+app.get(["/healthz", "/api/healthz"], (req, res) => {
+  return res.status(200).json({
+    status: "ALIVE",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get(["/readyz", "/api/readyz"], async (req, res) => {
+  const config = getConfig();
+  const dbHealth = await checkDatabaseHealth();
+  if (config.databaseUrl && !dbHealth.isConnected) {
+    logger.warn("Readiness probe check failed: Database configured but unreachable", { dbHealth });
+    return res.status(503).json({
+      status: "NOT_READY",
+      reason: "Database dependency unreachable",
+      timestamp: new Date().toISOString(),
+    });
+  }
+  return res.status(200).json({
+    status: "READY",
+    database: dbHealth.isConnected ? "postgresql" : "in_memory_resilient",
+    version: "2.1.0",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get(["/health", "/api/health"], (req, res) => {
   return res.json({
     status: "HEALTHY",
     uptimeSeconds: Math.floor(process.uptime()),
@@ -739,6 +782,7 @@ app.get("/api/health", (req, res) => {
     emergencyStopActive: simulationEmergencyStopActive,
     totalIngestedEvents: telemetryEventsStore.length,
     activeCases: socCasesStore.length,
+    version: "2.1.0",
   });
 });
 
@@ -1482,15 +1526,31 @@ app.post("/api/v2/integrations/:id/sync", async (req: any, res) => {
 
 // Centralized Safe Error Handler
 app.use((err: any, req: any, res: any, next: any) => {
-  console.error("[GLOBAL SERVER ERROR]", err);
+  const correlationId = req.headers["x-correlation-id"] || "unknown";
+  logger.error("API Request Unhandled Error", err, { correlationId, path: req.path, method: req.method });
   const isDev = process.env.NODE_ENV !== "production";
   res.status(err.status || 500).json({
     error: isDev ? err.message : "Internal Server Error",
     code: err.code || "INTERNAL_ERROR",
+    correlationId,
     timestamp: new Date().toISOString(),
   });
 });
+
 async function setupVite() {
+  const validation = validateEnvironment();
+  if (!validation.valid) {
+    logger.error("Fatal startup configuration errors detected:", undefined, { errors: validation.errors });
+    if (process.env.NODE_ENV === "production") {
+      logger.error("Startup aborted due to invalid production security configuration.");
+      process.exit(1);
+    }
+  }
+
+  if (validation.warnings.length > 0) {
+    validation.warnings.forEach((warn) => logger.warn(`Configuration warning: ${warn}`));
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1507,11 +1567,15 @@ async function setupVite() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[REDHACK SOC PLATFORM] Server active on http://0.0.0.0:${PORT}`);
+    logger.info(`RedHack AI SecOps Platform active on port ${PORT}`, {
+      port: PORT,
+      env: process.env.NODE_ENV || "development",
+      version: "2.1.0",
+    });
   });
 }
 
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && !process.env.VITEST && process.env.NODE_ENV !== "test") {
   setupVite();
 }
 

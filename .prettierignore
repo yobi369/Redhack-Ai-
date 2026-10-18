@@ -1,0 +1,7 @@
+dist/
+node_modules/
+api/
+coverage/
+package-lock.json
+bun.lock
+*.d.ts

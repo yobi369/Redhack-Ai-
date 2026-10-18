@@ -31,8 +31,15 @@ export class SlidingWindowRateLimiter {
     }
   }
 
-  public check(key: string): { allowed: boolean; remaining: number; resetTime: number } {
+  public check(
+    key: string,
+    limitOverride?: number,
+    windowOverride?: number
+  ): { allowed: boolean; remaining: number; resetTime: number; retryAfterSeconds: number } {
     const now = Date.now();
+    const effectiveLimit = limitOverride ?? this.maxRequests;
+    const effectiveWindow = windowOverride ?? this.windowMs;
+
     let record = this.records.get(key);
 
     if (!record) {
@@ -41,17 +48,19 @@ export class SlidingWindowRateLimiter {
     }
 
     // Keep only timestamps within current sliding window
-    record.timestamps = record.timestamps.filter((t) => now - t < this.windowMs);
+    record.timestamps = record.timestamps.filter((t) => now - t < effectiveWindow);
 
-    if (record.timestamps.length >= this.maxRequests) {
+    if (record.timestamps.length >= effectiveLimit) {
       const oldest = record.timestamps[0];
-      const resetTime = Math.ceil((oldest + this.windowMs - now) / 1000);
-      return { allowed: false, remaining: 0, resetTime: Math.max(1, resetTime) };
+      const resetTime = Math.ceil((oldest + effectiveWindow - now) / 1000);
+      const waitSec = Math.max(1, resetTime);
+      return { allowed: false, remaining: 0, resetTime: waitSec, retryAfterSeconds: waitSec };
     }
 
     record.timestamps.push(now);
-    const remaining = this.maxRequests - record.timestamps.length;
-    return { allowed: true, remaining, resetTime: Math.ceil(this.windowMs / 1000) };
+    const remaining = Math.max(0, effectiveLimit - record.timestamps.length);
+    const defaultReset = Math.ceil(effectiveWindow / 1000);
+    return { allowed: true, remaining, resetTime: defaultReset, retryAfterSeconds: defaultReset };
   }
 
   public middleware(limit?: number, windowMs?: number) {
@@ -60,9 +69,7 @@ export class SlidingWindowRateLimiter {
 
     return (req: Request, res: Response, next: NextFunction) => {
       const clientIp =
-        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-        req.socket.remoteAddress ||
-        "127.0.0.1";
+        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1";
 
       const key = `${clientIp}:${req.path}`;
       const result = this.check(key);

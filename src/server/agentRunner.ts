@@ -109,6 +109,8 @@ export class ProductionAgentRunner {
     agentRun.status = "COMPLETED";
     agentRun.completedAt = new Date().toISOString();
     agentRun.output = executionOutput;
+    agentRun.confidenceScore = executionOutput.confidence ?? 0.95;
+    agentRun.evidenceItems = executionOutput.evidenceArtifacts || [];
 
     // Log completed action to immutable audit trail
     enterpriseStore.logAuditEvent(
@@ -171,7 +173,9 @@ export class ProductionAgentRunner {
           recommendedAction: "Verify host persistence and query proxy telemetry for beaconing.",
           confidence: 0.94,
           confidenceLevel: "HIGH",
-          evidenceArtifacts: targetAlert ? [{ alertId: targetAlert.id, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }] : [],
+          evidenceArtifacts: targetAlert
+            ? [{ alertId: targetAlert.id, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }]
+            : [],
           modelAudit: { latencyMs: Date.now() - startTime, tokens: 412 },
         };
 
@@ -222,7 +226,8 @@ export class ProductionAgentRunner {
       case "incident_response":
         return {
           agent: "Incident Response",
-          containmentAssessment: "Evaluated host isolation impact. No critical domain controller dependencies detected.",
+          containmentAssessment:
+            "Evaluated host isolation impact. No critical domain controller dependencies detected.",
           proposedContainment: "Isolate host from subnet while preserving forensic management IP.",
           requiresApproval: true,
           confidence: 0.95,
@@ -234,7 +239,8 @@ export class ProductionAgentRunner {
       case "validation_agent":
         return {
           agent: "Validation Agent",
-          preflightCheck: "Rules of Engagement check: Target is within authorized CIDR 10.0.0.0/16. Exclusions verified.",
+          preflightCheck:
+            "Rules of Engagement check: Target is within authorized CIDR 10.0.0.0/16. Exclusions verified.",
           emulationReadiness: "SAFE_SYNTHETIC simulation permitted in isolated sandbox.",
           confidence: 0.99,
           confidenceLevel: "HIGH",
@@ -245,11 +251,17 @@ export class ProductionAgentRunner {
       case "reporting_agent":
         return {
           agent: "Reporting Agent",
-          reportSummary: "Compiled executive briefing containing posture grade, active incidents, and compliance score.",
+          reportSummary:
+            "Compiled executive briefing containing posture grade, active incidents, and compliance score.",
           formatsGenerated: ["MARKDOWN", "JSON", "HTML", "CSV"],
           confidence: 1.0,
           confidenceLevel: "HIGH",
-          evidenceArtifacts: [{ reportId: "REP-2026-OCT-EXEC", checksum: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069" }],
+          evidenceArtifacts: [
+            {
+              reportId: "REP-2026-OCT-EXEC",
+              checksum: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
+            },
+          ],
           modelAudit: { latencyMs: Date.now() - startTime, tokens: 460 },
         };
 

@@ -1,5 +1,11 @@
 import { calculateCvssV31, parseCvssVector, CvssInput } from "../src/utils/cvssCalculator";
-import { defangIndicator, refangIndicator, exportToStix21, isTargetAuthorized, detectIocType } from "../src/utils/iocUtils";
+import {
+  defangIndicator,
+  refangIndicator,
+  exportToStix21,
+  isTargetAuthorized,
+  detectIocType,
+} from "../src/utils/iocUtils";
 import { ThreatIndicator } from "../src/types";
 
 let passedCount = 0;
@@ -118,11 +124,7 @@ assert(
 );
 
 const refangedUrl = refangIndicator(defangedUrl);
-assert(
-  refangedUrl === rawUrl,
-  "Explicit Refanging Reversibility",
-  `Expected ${rawUrl}, got ${refangedUrl}`
-);
+assert(refangedUrl === rawUrl, "Explicit Refanging Reversibility", `Expected ${rawUrl}, got ${refangedUrl}`);
 
 const rawIp = "194.26.29.112";
 const defangedIp = defangIndicator(rawIp);
@@ -173,19 +175,11 @@ const exclusions = ["db-primary.corp.internal", "10.0.3.50", "payment.gateway.in
 
 // 1. Target inside authorized subnet
 const authIpCheck = isTargetAuthorized("10.0.0.45", authorizedCidrs, authorizedDomains, exclusions);
-assert(
-  authIpCheck.authorized === true,
-  "Target inside authorized CIDR 10.0.0.0/24 is permitted",
-  authIpCheck.reason
-);
+assert(authIpCheck.authorized === true, "Target inside authorized CIDR 10.0.0.0/24 is permitted", authIpCheck.reason);
 
 // 2. Target inside authorized domain
 const authDomCheck = isTargetAuthorized("api.internal-corp.io", authorizedCidrs, authorizedDomains, exclusions);
-assert(
-  authDomCheck.authorized === true,
-  "Target inside authorized domain is permitted",
-  authDomCheck.reason
-);
+assert(authDomCheck.authorized === true, "Target inside authorized domain is permitted", authDomCheck.reason);
 
 // 3. Target matching explicit exclusion MUST BE BLOCKED
 const excCheck = isTargetAuthorized("db-primary.corp.internal", authorizedCidrs, authorizedDomains, exclusions);
@@ -304,7 +298,8 @@ detection:
   condition: selection
 `;
 
-const isSigmaValid = validSigma.includes("title:") && validSigma.includes("logsource:") && validSigma.includes("detection:");
+const isSigmaValid =
+  validSigma.includes("title:") && validSigma.includes("logsource:") && validSigma.includes("detection:");
 assert(
   isSigmaValid,
   "Sigma YAML parser validates mandatory specification schema sections",
@@ -326,11 +321,7 @@ console.log("\nSuite 7: Unified Finding Lifecycle State Transitions & Audit Trai
 import { enterpriseStore } from "../src/db/store";
 
 const finding = enterpriseStore.getFindings()[0];
-assert(
-  !!finding,
-  "Finding store contains initialized enterprise findings",
-  "Findings list is empty"
-);
+assert(!!finding, "Finding store contains initialized enterprise findings", "Findings list is empty");
 
 // Transition from current to VALIDATING
 const transitioned = enterpriseStore.transitionFindingStatus(
@@ -383,8 +374,8 @@ assert(
 );
 assert(
   typeof scoreRecord.breakdown.assetExposure === "number" &&
-  typeof scoreRecord.breakdown.severityExploitability === "number" &&
-  typeof scoreRecord.breakdown.remediationStatus === "number",
+    typeof scoreRecord.breakdown.severityExploitability === "number" &&
+    typeof scoreRecord.breakdown.remediationStatus === "number",
   "Score breakdown properly weights exposure, exploitability, and remediation",
   "Breakdown metrics malformed"
 );
@@ -402,11 +393,7 @@ assert(
 );
 
 const irAgent = enterpriseStore.getAgentByCodeName("incident_response");
-assert(
-  irAgent !== undefined,
-  "Incident Response Agent is active",
-  "Incident Response Agent not found"
-);
+assert(irAgent !== undefined, "Incident Response Agent is active", "Incident Response Agent not found");
 
 const requiresApproval = irAgent?.requiresHumanApprovalFor.includes("isolate_endpoint_host");
 assert(
@@ -416,12 +403,7 @@ assert(
 );
 
 // Verify agent execution logs run safely with scoped tools
-const agentRun = enterpriseStore.createAgentRun(
-  "security_analyst",
-  "MANUAL",
-  { target: "10.0.1.5" },
-  "test-user"
-);
+const agentRun = enterpriseStore.createAgentRun("security_analyst", "MANUAL", { target: "10.0.1.5" }, "test-user");
 assert(
   agentRun.status === "COMPLETED" && agentRun.toolCalls.length > 0,
   "Specialized agent executes scoped non-destructive tools with audit trail",

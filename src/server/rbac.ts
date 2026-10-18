@@ -129,6 +129,17 @@ export const ROLE_PERMISSIONS_MAP: Record<string, PermissionKey[]> = {
 };
 
 /**
+ * Checks if a specific role possesses a permission
+ */
+export function hasPermission(role: string, permission: PermissionKey): boolean {
+  if (!role) return false;
+  const normRole = role.toUpperCase();
+  if (normRole === "SUPER_ADMIN") return true;
+  const perms = ROLE_PERMISSIONS_MAP[normRole] || [];
+  return perms.includes(permission);
+}
+
+/**
  * Authentication Middleware: Validates Bearer token or allows session bypass for local development/preview
  */
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {

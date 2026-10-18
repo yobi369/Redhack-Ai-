@@ -3,19 +3,9 @@
 // ============================================================================
 
 export type ConnectorCategory =
-  | "SIEM"
-  | "EDR"
-  | "VULN_SCANNER"
-  | "THREAT_INTEL"
-  | "CLOUD_PROVIDER"
-  | "CODE_REPO"
-  | "IDENTITY";
+  "SIEM" | "EDR" | "VULN_SCANNER" | "THREAT_INTEL" | "CLOUD_PROVIDER" | "CODE_REPO" | "IDENTITY";
 
-export type ConnectorStatus =
-  | "CONNECTED"
-  | "CONFIGURED_OFFLINE"
-  | "UNAVAILABLE"
-  | "DEMO_SIMULATED";
+export type ConnectorStatus = "CONNECTED" | "CONFIGURED_OFFLINE" | "UNAVAILABLE" | "DEMO_SIMULATED";
 
 export interface ConnectorHealth {
   status: ConnectorStatus;
@@ -216,7 +206,9 @@ class ConnectorRegistry {
     return this.connectors.get(id);
   }
 
-  public async getStatuses(): Promise<Array<{ id: string; name: string; category: ConnectorCategory; health: ConnectorHealth }>> {
+  public async getStatuses(): Promise<
+    Array<{ id: string; name: string; category: ConnectorCategory; health: ConnectorHealth }>
+  > {
     const results = [];
     for (const connector of this.connectors.values()) {
       const health = await connector.healthCheck();

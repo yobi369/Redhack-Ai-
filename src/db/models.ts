@@ -359,6 +359,8 @@ export interface AgentRun {
   inputContext: Record<string, any>;
   outputResult?: Record<string, any>;
   output?: any;
+  confidenceScore?: number;
+  evidenceItems?: any[];
   notes?: string;
   approvalPendingAction?: AgentRunPendingApproval;
   toolCalls: Array<{

@@ -4,7 +4,53 @@
 
 import crypto from "crypto";
 
-const JWT_SECRET = process.env.JWT_SECRET || "redhack-production-enterprise-secret-salt-2026";
+const INSECURE_PLACEHOLDER_SECRETS = new Set([
+  "redhack-production-enterprise-secret-salt-2026",
+  "replace-with-cryptographically-secure-random-string-in-production",
+  "secret",
+  "changeme",
+  "123456",
+  "password",
+]);
+
+let _ephemeralDevelopmentSecret: string | null = null;
+
+/**
+ * Returns a cryptographically validated JWT secret.
+ * In production (NODE_ENV=production), an explicit, strong secret (>= 32 chars) is strictly enforced.
+ * In testing and development, an ephemeral process-bound random key is generated if unset.
+ */
+export function getJwtSecret(): string {
+  const envSecret = process.env.JWT_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    if (!envSecret || envSecret.length < 32 || INSECURE_PLACEHOLDER_SECRETS.has(envSecret)) {
+      throw new Error(
+        "FATAL CONFIGURATION ERROR: In production mode (NODE_ENV=production), JWT_SECRET must be supplied externally via environment variable and must be at least 32 characters long. Insecure or default placeholder secrets are rejected."
+      );
+    }
+    return envSecret;
+  }
+
+  if (envSecret && envSecret.length >= 16 && !INSECURE_PLACEHOLDER_SECRETS.has(envSecret)) {
+    return envSecret;
+  }
+
+  // Ephemeral key for local dev / tests: generated once per process runtime
+  if (!_ephemeralDevelopmentSecret) {
+    _ephemeralDevelopmentSecret = crypto.randomBytes(32).toString("hex");
+  }
+  return _ephemeralDevelopmentSecret;
+}
+
+/**
+ * Rotates the ephemeral secret (used for testing session/token invalidation)
+ */
+export function rotateDevelopmentSecret(): void {
+  _ephemeralDevelopmentSecret = crypto.randomBytes(32).toString("hex");
+}
+
 const TOKEN_TTL_SECONDS = 3600 * 8; // 8 hours
 
 export interface AuthTokenPayload {
@@ -23,16 +69,12 @@ export interface AuthTokenPayload {
  */
 export function hashPassword(password: string): { hash: string; salt: string } {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto
-    .pbkdf2Sync(password, salt, 100000, 64, "sha512")
-    .toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
   return { hash, salt };
 }
 
 export function verifyPassword(password: string, hash: string, salt: string): boolean {
-  const checkHash = crypto
-    .pbkdf2Sync(password, salt, 100000, 64, "sha512")
-    .toString("hex");
+  const checkHash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(checkHash, "hex"));
 }
 
@@ -46,10 +88,8 @@ export function signAuthToken(payload: Omit<AuthTokenPayload, "exp" | "iat">): s
 
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(fullPayload)).toString("base64url");
-  const signature = crypto
-    .createHmac("sha256", JWT_SECRET)
-    .update(`${header}.${body}`)
-    .digest("base64url");
+  const secret = getJwtSecret();
+  const signature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
 
   return `${header}.${body}.${signature}`;
 }
@@ -62,23 +102,16 @@ export function verifyAuthToken(token: string): { valid: boolean; payload?: Auth
     }
 
     const [header, body, signature] = parts;
-    const expectedSignature = crypto
-      .createHmac("sha256", JWT_SECRET)
-      .update(`${header}.${body}`)
-      .digest("base64url");
+    const secret = getJwtSecret();
+    const expectedSignature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
 
-    const validSig = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const validSig = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
 
     if (!validSig) {
       return { valid: false, error: "Invalid signature" };
     }
 
-    const payload: AuthTokenPayload = JSON.parse(
-      Buffer.from(body, "base64url").toString("utf8")
-    );
+    const payload: AuthTokenPayload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
 
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
@@ -110,7 +143,10 @@ export function hashApiKey(rawKey: string): string {
  * SSRF Prevention Validator
  * Prohibits SSRF attacks targeting cloud metadata (169.254.169.254), loopback (127.0.0.1), and unauthorized RFC1918 subnets
  */
-export function validateSafeUrl(rawUrl: string, allowedInternalHosts: string[] = []): { safe: boolean; reason?: string } {
+export function validateSafeUrl(
+  rawUrl: string,
+  allowedInternalHosts: string[] = []
+): { safe: boolean; reason?: string } {
   try {
     const parsed = new URL(rawUrl);
 
@@ -134,9 +170,7 @@ export function validateSafeUrl(rawUrl: string, allowedInternalHosts: string[] =
 
     // Check private subnets unless explicitly permitted
     const isPrivate =
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+      hostname.startsWith("10.") || hostname.startsWith("192.168.") || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
 
     if (isPrivate && !allowedInternalHosts.includes(hostname)) {
       return { safe: false, reason: "Access to unapproved internal subnet is blocked by SSRF defense." };
@@ -152,7 +186,11 @@ export function validateSafeUrl(rawUrl: string, allowedInternalHosts: string[] =
  * Prompt Injection Screening
  * Detects adversarial jailbreaks, system prompt extractions, and instruction overriding
  */
-export function detectPromptInjection(input: string): { suspicious: boolean; confidence: number; triggeredPattern?: string } {
+export function detectPromptInjection(input: string): {
+  suspicious: boolean;
+  confidence: number;
+  triggeredPattern?: string;
+} {
   if (!input || typeof input !== "string") return { suspicious: false, confidence: 0 };
 
   const patterns = [

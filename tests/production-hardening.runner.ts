@@ -102,14 +102,12 @@ assert(
 );
 
 assert(
-  socLeadPerms.includes(PERMISSIONS.APPROVE_CONTAINMENT) &&
-    socLeadPerms.includes(PERMISSIONS.EXECUTE_ROLLBACK),
+  socLeadPerms.includes(PERMISSIONS.APPROVE_CONTAINMENT) && socLeadPerms.includes(PERMISSIONS.EXECUTE_ROLLBACK),
   "SOC Lead role has containment approval and rollback permissions"
 );
 
 assert(
-  !l1Perms.includes(PERMISSIONS.EXECUTE_HOST_ISOLATION) &&
-    !l1Perms.includes(PERMISSIONS.MODIFY_ROE_SCOPE),
+  !l1Perms.includes(PERMISSIONS.EXECUTE_HOST_ISOLATION) && !l1Perms.includes(PERMISSIONS.MODIFY_ROE_SCOPE),
   "L1 Analyst strictly restricted from destructive isolation and scope modifications"
 );
 
@@ -121,17 +119,11 @@ console.log("\nSuite 4: Multi-Tenant Workspace & Organizational Isolation");
 const prodAssets = enterpriseStore.getAssets("ws-prod-defense");
 const sandboxAssets = enterpriseStore.getAssets("ws-isolated-sandbox");
 
-assert(
-  prodAssets.length > 0 && sandboxAssets.length > 0,
-  "Tenants have distinct asset stores"
-);
+assert(prodAssets.length > 0 && sandboxAssets.length > 0, "Tenants have distinct asset stores");
 
 // Ensure asset from sandbox is not in prod
 const hasSandboxLeakInProd = prodAssets.some((a) => a.workspaceId === "ws-isolated-sandbox");
-assert(
-  !hasSandboxLeakInProd,
-  "Zero cross-workspace data leakage between Production and Sandbox tenants"
-);
+assert(!hasSandboxLeakInProd, "Zero cross-workspace data leakage between Production and Sandbox tenants");
 
 // -------------------------------------------------------------
 // TEST SUITE 5: API Rate Limiting (Sliding Window Token Bucket)
@@ -173,17 +165,11 @@ assert(
 
 // 2. Localhost loopback attack
 const loopbackCheck = validateSafeUrl("http://127.0.0.1:8080/admin");
-assert(
-  !loopbackCheck.safe,
-  "SSRF protection strictly blocks loopback interface (127.0.0.1)"
-);
+assert(!loopbackCheck.safe, "SSRF protection strictly blocks loopback interface (127.0.0.1)");
 
 // 3. Legitimate public HTTPS domain
 const safeWebCheck = validateSafeUrl("https://api.github.com/repos/yobi369");
-assert(
-  safeWebCheck.safe,
-  "Legitimate public HTTPS web API is permitted"
-);
+assert(safeWebCheck.safe, "Legitimate public HTTPS web API is permitted");
 
 // -------------------------------------------------------------
 // TEST SUITE 7: Prompt Injection & Adversarial Jailbreak Screening
@@ -200,10 +186,7 @@ assert(
 
 const benignPrompt = "Investigate alert 101 regarding suspicious SMB traffic on port 445.";
 const benignDetection = detectPromptInjection(benignPrompt);
-assert(
-  !benignDetection.suspicious,
-  "Benign cybersecurity query passes prompt validation without false positive"
-);
+assert(!benignDetection.suspicious, "Benign cybersecurity query passes prompt validation without false positive");
 
 // -------------------------------------------------------------
 // TEST SUITE 8: Real Integration Connector Framework
@@ -239,7 +222,8 @@ async function testAgentRunner() {
   });
 
   assert(
-    runResult.run.status === "COMPLETED" && (runResult.run.output?.confidenceLevel === "HIGH" || runResult.run.outputResult?.confidenceLevel === "HIGH"),
+    runResult.run.status === "COMPLETED" &&
+      (runResult.run.output?.confidenceLevel === "HIGH" || runResult.run.outputResult?.confidenceLevel === "HIGH"),
     "Specialized agent executes with high confidence and structured evidence output"
   );
 
