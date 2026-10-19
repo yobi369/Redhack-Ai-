@@ -26,7 +26,8 @@ export interface ConfigValidationResult {
  * Enforces production readiness rules:
  * - In production: JWT_SECRET must be externally supplied, cryptographically strong (>= 32 chars).
  * - Port must be a valid TCP port (1 - 65535).
- * - Database URL, if provided, must start with postgresql:// or postgres://.
+ * - Production requires DATABASE_URL; the in-memory fallback is never production-ready.
+ * - Database URL must start with postgresql:// or postgres:// when provided.
  */
 export function validateEnvironment(): ConfigValidationResult {
   const errors: string[] = [];
@@ -56,7 +57,7 @@ export function validateEnvironment(): ConfigValidationResult {
       errors.push("DATABASE_URL must be a valid PostgreSQL connection URI starting with postgresql:// or postgres://");
     }
   } else if (isProduction) {
-    warnings.push("DATABASE_URL not set in production. System is falling back to transactional in-memory store.");
+    errors.push("DATABASE_URL is required in production. In-memory storage is not durable or safe for production SOC data.");
   }
 
   // 4. Gemini API Key check
