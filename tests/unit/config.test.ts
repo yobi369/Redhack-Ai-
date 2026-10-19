@@ -45,10 +45,21 @@ describe("Server Environment Configuration & Validation", () => {
     process.env.NODE_ENV = "production";
     process.env.PORT = "3000";
     process.env.JWT_SECRET = "a-very-secure-production-random-secret-key-32chars";
+    process.env.DATABASE_URL = "postgresql://redhack:test@localhost:5432/redhack";
 
     const result = validateEnvironment();
     expect(result.valid).toBe(true);
     expect(result.errors.length).toBe(0);
+  });
+
+  it("should require durable PostgreSQL storage in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.JWT_SECRET = "a-very-secure-production-random-secret-key-32chars";
+    delete process.env.DATABASE_URL;
+
+    const result = validateEnvironment();
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("DATABASE_URL is required in production"))).toBe(true);
   });
 
   it("should return sanitized server configuration without leaking raw secrets", () => {
