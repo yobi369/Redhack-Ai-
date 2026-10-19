@@ -75,6 +75,7 @@ jobs:
           docker run --detach --name redhack-ai-ci --publish 127.0.0.1:3000:3000 \
             --env NODE_ENV=production \
             --env JWT_SECRET=ci-only-secret-with-more-than-32-characters-000000 \
+            --env DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/redhack_ci \
             redhack-ai:ci
           cleanup() {
             docker logs redhack-ai-ci || true
