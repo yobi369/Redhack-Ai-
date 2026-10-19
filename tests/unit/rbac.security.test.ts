@@ -100,13 +100,15 @@ describe("Production authentication and authorization boundaries", () => {
     const next = vi.fn<NextFunction>();
     const res = responseMock();
 
-    authenticate({
+    const req = {
       path: "/healthz",
       headers: {},
       params: {},
       body: {},
       query: {},
-    } as unknown as Request as any, res, next);
+    } as unknown as Request;
+
+    authenticate(req as any, res, next);
 
     expect(next).toHaveBeenCalledOnce();
     expect(res.status).not.toHaveBeenCalled();
