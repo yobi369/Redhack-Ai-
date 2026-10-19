@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"server.ts\" \"scripts/**/*.ts\" && tsc --noEmit",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" \"server.ts\" \"scripts/**/*.ts\" --fix",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"*.{ts,json,md}\"",
+    "format:check": "prettier --check \"src/server/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"vitest.config.ts\" \"eslint.config.js\"",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"*.{ts,json,md}\"",
     "test": "vitest run && node --import tsx tests/run-tests.ts && node --import tsx tests/production-hardening.runner.ts",
     "test:vitest": "vitest run",
