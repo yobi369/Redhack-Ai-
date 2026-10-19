@@ -1509,7 +1509,7 @@ app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), async (req
       }
     } catch (error) {
       logger.error("Authentication database query failed", error);
-      return res.status(503).json({ error: "Authentication service temporarily unavailable", code: "AUTH_STORE_UNAVAILABLE" });
+      return res.status(503).json({ error: "Authentication service temporarily unavailable", code: "AUTH_STORE_ERROR" });
     }
   } else if (process.env.NODE_ENV === "production") {
     // Production authentication must never fall back to the in-memory demo identity store.
