@@ -265,11 +265,7 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
   const publicPaths = new Set(["/healthz", "/readyz", "/v2/auth/login"]);
   if (publicPaths.has(req.path) || req.method === "OPTIONS") return next();
 
-  if (
-    req.user?.userId === "readonly-demo" &&
-    req.method !== "GET" &&
-    req.method !== "HEAD"
-  ) {
+  if (req.user?.userId === "readonly-demo" && req.method !== "GET" && req.method !== "HEAD") {
     return res.status(403).json({
       error: "Read-only demo sessions cannot modify platform state",
       code: "READ_ONLY_DEMO",
