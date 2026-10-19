@@ -11,7 +11,7 @@ import {
   ROLE_PERMISSIONS_MAP,
 } from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
-import { checkDatabaseHealth, runDatabaseMigrations } from "./src/db/postgres";
+import { checkDatabaseHealth, getPostgresPool, runDatabaseMigrations } from "./src/db/postgres";
 import { connectorRegistry } from "./src/server/integrations";
 import { productionAgentRunner } from "./src/server/agentRunner";
 
@@ -1419,18 +1419,59 @@ app.get("/api/health", async (req, res) => {
 });
 
 // Production Authentication: Login & Token Issuance
-app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res) => {
+app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!email || !password || email.length > 254 || password.length > 1024) {
     return res.status(400).json({ error: "Valid email and password are required", code: "INVALID_CREDENTIALS" });
   }
 
-  const users = enterpriseStore.getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email);
+  let user: import("./src/db/models").User | undefined;
+  const pool = getPostgresPool();
+
+  if (pool) {
+    try {
+      const result = await pool.query(
+        `SELECT u.id, u.email, u.full_name, u.role_id, u.default_organization_id,
+                u.default_workspace_id, u.is_active, u.password_hash, u.password_salt,
+                r.name AS role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+         WHERE LOWER(u.email) = $1
+         LIMIT 1`,
+        [email]
+      );
+      const row = result.rows[0];
+      if (row) {
+        user = {
+          id: row.id,
+          email: row.email,
+          fullName: row.full_name,
+          roleId: row.role_id,
+          roleName: row.role_name || "L1_ANALYST",
+          defaultOrganizationId: row.default_organization_id || "",
+          defaultWorkspaceId: row.default_workspace_id || "",
+          isActive: row.is_active === true,
+          passwordHash: typeof row.password_hash === "string" ? row.password_hash.trim() : undefined,
+          passwordSalt: typeof row.password_salt === "string" ? row.password_salt.trim() : undefined,
+        };
+      }
+    } catch (error) {
+      logger.error("Authentication database query failed", error);
+      return res.status(503).json({ error: "Authentication service temporarily unavailable", code: "AUTH_STORE_UNAVAILABLE" });
+    }
+  } else if (process.env.NODE_ENV === "production") {
+    // Production authentication must never fall back to the in-memory demo identity store.
+    return res.status(503).json({
+      error: "Persistent authentication storage is not configured",
+      code: "AUTH_STORE_UNAVAILABLE",
+    });
+  } else {
+    user = enterpriseStore.getUsers().find((candidate) => candidate.email.toLowerCase() === email);
+  }
 
   // Seed/demo users intentionally have no password hashes. Never issue a token merely
-  // because an email exists; production identities must be provisioned with a salted hash.
+  // because an email exists; provision real users with the secure CLI and persistent DB.
   if (
     !user ||
     !user.isActive ||
@@ -1451,16 +1492,17 @@ app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res)
   const userRole = Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS_MAP, candidateRole)
     ? candidateRole
     : "L1_ANALYST";
-  const userOrg = user.defaultOrganizationId || user.organizationId || "org-defense-corp";
+  const userOrg = user.defaultOrganizationId || "org-defense-corp";
   const userName = user.fullName || user.name || "Operator";
   const userPerms = ROLE_PERMISSIONS_MAP[userRole] || [];
+  const workspaceId = user.defaultWorkspaceId || "ws-prod-defense";
 
   const token = signAuthToken({
     userId: user.id,
     email: user.email,
     role: userRole,
     organizationId: userOrg,
-    workspaceId: enterpriseStore.getActiveWorkspace().id,
+    workspaceId,
     permissions: userPerms,
   });
 
@@ -1482,6 +1524,7 @@ app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res)
       email: user.email,
       role: userRole,
       organizationId: userOrg,
+      workspaceId,
       permissions: userPerms,
     },
   });
