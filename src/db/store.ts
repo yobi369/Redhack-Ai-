@@ -762,9 +762,10 @@ class EnterpriseStore {
     return this.workspaces;
   }
 
-  public getActiveWorkspace(): Workspace {
-    const ws = this.workspaces.find((w) => w.id === this.activeWorkspaceId);
-    return ws || this.workspaces[0];
+  public getActiveWorkspace(workspaceId = this.activeWorkspaceId): Workspace {
+    const ws = this.workspaces.find((w) => w.id === workspaceId);
+    if (!ws) throw new Error(`Workspace not found: ${workspaceId}`);
+    return ws;
   }
 
   public setActiveWorkspace(id: string): Workspace {
@@ -776,8 +777,11 @@ class EnterpriseStore {
     return this.getActiveWorkspace();
   }
 
-  public updateScopePolicy(policy: Partial<Workspace["scopePolicy"]>): Workspace {
-    const ws = this.getActiveWorkspace();
+  public updateScopePolicy(
+    policy: Partial<Workspace["scopePolicy"]>,
+    workspaceId = this.activeWorkspaceId
+  ): Workspace {
+    const ws = this.getActiveWorkspace(workspaceId);
     ws.scopePolicy = { ...ws.scopePolicy, ...policy };
     this.logAuditEvent(
       "user-marcus",
@@ -813,9 +817,13 @@ class EnterpriseStore {
     return this.assets.find((a) => a.id === id);
   }
 
-  public createAsset(asset: Omit<Asset, "id" | "createdAt" | "updatedAt">): Asset {
+  public createAsset(
+    asset: Omit<Asset, "id" | "createdAt" | "updatedAt">,
+    workspaceId = this.activeWorkspaceId
+  ): Asset {
     const newAsset: Asset = {
       ...asset,
+      workspaceId,
       id: `ast-${Date.now().toString(36)}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -844,9 +852,10 @@ class EnterpriseStore {
     id: string,
     newStatus: FindingLifecycleStatus,
     actorName: string,
-    notes: string
+    notes: string,
+    workspaceId = this.activeWorkspaceId
   ): Finding | null {
-    const finding = this.findings.find((f) => f.id === id);
+    const finding = this.findings.find((f) => f.id === id && f.workspaceId === workspaceId);
     if (!finding) return null;
 
     const prevStatus = finding.lifecycleStatus;
@@ -977,9 +986,10 @@ class EnterpriseStore {
   public executeIncidentContainmentAction(
     incidentId: string,
     actionId: string,
-    approverName: string
+    approverName: string,
+    workspaceId = this.activeWorkspaceId
   ): { success: boolean; message: string; action?: any } {
-    const inc = this.incidents.find((i) => i.id === incidentId);
+    const inc = this.incidents.find((i) => i.id === incidentId && i.workspaceId === workspaceId);
     if (!inc) return { success: false, message: "Incident not found" };
 
     const act = inc.containmentActions.find((a) => a.id === actionId);
@@ -1005,9 +1015,10 @@ class EnterpriseStore {
   public rollbackIncidentContainmentAction(
     incidentId: string,
     actionId: string,
-    actorName: string
+    actorName: string,
+    workspaceId = this.activeWorkspaceId
   ): { success: boolean; message: string; action?: any } {
-    const inc = this.incidents.find((i) => i.id === incidentId);
+    const inc = this.incidents.find((i) => i.id === incidentId && i.workspaceId === workspaceId);
     if (!inc) return { success: false, message: "Incident not found" };
 
     const act = inc.containmentActions.find((a) => a.id === actionId);
@@ -1097,9 +1108,13 @@ class EnterpriseStore {
     return this.evidence.filter((e) => e.workspaceId === workspaceId);
   }
 
-  public addEvidence(item: Omit<EvidenceItem, "id" | "createdAt">): EvidenceItem {
+  public addEvidence(
+    item: Omit<EvidenceItem, "id" | "createdAt">,
+    workspaceId = this.activeWorkspaceId
+  ): EvidenceItem {
     const ev: EvidenceItem = {
       ...item,
+      workspaceId,
       id: `ev-${Date.now().toString(36)}`,
       createdAt: new Date().toISOString(),
     };
@@ -1116,9 +1131,13 @@ class EnterpriseStore {
     return this.reports.filter((r) => r.workspaceId === workspaceId);
   }
 
-  public createReport(report: Omit<ReportItem, "id" | "createdAt">): ReportItem {
+  public createReport(
+    report: Omit<ReportItem, "id" | "createdAt">,
+    workspaceId = this.activeWorkspaceId
+  ): ReportItem {
     const newReport: ReportItem = {
       ...report,
+      workspaceId,
       id: `rep-${Date.now().toString(36)}`,
       createdAt: new Date().toISOString(),
     };

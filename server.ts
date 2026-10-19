@@ -3,19 +3,29 @@ import path from "path";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { generalRateLimiter, aiExecutionRateLimiter, authRateLimiter } from "./src/server/rateLimiter";
-import { authenticate, requirePermission, enforceTenantIsolation, PERMISSIONS } from "./src/server/rbac";
+import {
+  authenticate,
+  requirePermission,
+  enforceTenantIsolation,
+  PERMISSIONS,
+  ROLE_PERMISSIONS_MAP,
+  authorizeApiRequest,
+} from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
-import { checkDatabaseHealth, runDatabaseMigrations } from "./src/db/postgres";
+import { checkDatabaseHealth, getPostgresPool, runDatabaseMigrations } from "./src/db/postgres";
 import { connectorRegistry } from "./src/server/integrations";
 import { productionAgentRunner } from "./src/server/agentRunner";
 
 import helmet from "helmet";
 import { logger, generateCorrelationId } from "./src/server/logger";
 import { validateEnvironment, getConfig } from "./src/server/config";
+import { healthRouter } from "./src/server/routes/health";
 
 dotenv.config();
 
 const app = express();
+// Trust the hosting platform's single proxy hop; rate limiting uses req.ip, never a raw header.
+app.set("trust proxy", 1);
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Request Correlation ID Middleware
@@ -46,11 +56,16 @@ app.use(
 // JSON Body Parser with safe payload limit
 app.use(express.json({ limit: "5mb" }));
 
+// Public liveness/readiness probes; keep them outside the authenticated API chain.
+app.use(healthRouter);
+app.use("/api", healthRouter);
+
 // General API Rate Limiter
 app.use("/api", generalRateLimiter.middleware(150, 60000));
 
-// Attach Auth & Tenant Context to API routes
+// Attach Auth & Tenant Context, then enforce an explicit permission policy on API operations.
 app.use("/api", authenticate as any);
+app.use("/api", authorizeApiRequest as any);
 
 // Lazy GoogleGenAI client
 let aiClient: GoogleGenAI | null = null;
@@ -1191,44 +1206,85 @@ Return JSON matching:
 import { enterpriseStore } from "./src/db/store";
 
 // Workspaces & Multi-Tenancy
-app.get("/api/v2/workspaces", (req, res) => {
-  res.json(enterpriseStore.getWorkspaces());
+const requestWorkspaceId = (req: any): string =>
+  req.tenantContext?.workspaceId || req.user?.workspaceId || "ws-prod-defense";
+
+const requestWorkspace = (req: any) => {
+  const workspace = enterpriseStore.getWorkspaces().find(
+    (candidate) =>
+      candidate.id === requestWorkspaceId(req) &&
+      candidate.organizationId === req.tenantContext?.organizationId
+  );
+  return workspace || null;
+};
+
+app.get("/api/v2/workspaces", (req: any, res) => {
+  const organizationId = req.tenantContext?.organizationId;
+  res.json(
+    enterpriseStore.getWorkspaces().filter(
+      (workspace) => req.user?.role === "SUPER_ADMIN" || workspace.organizationId === organizationId
+    )
+  );
 });
 
-app.get("/api/v2/workspaces/active", (req, res) => {
-  res.json(enterpriseStore.getActiveWorkspace());
+app.get("/api/v2/workspaces/active", (req: any, res) => {
+  const workspace = requestWorkspace(req);
+  if (!workspace) return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  res.json(workspace);
 });
 
-app.post("/api/v2/workspaces/switch", (req, res) => {
+app.post("/api/v2/workspaces/switch", (req: any, res) => {
   const { workspaceId } = req.body;
-  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
-  const ws = enterpriseStore.setActiveWorkspace(workspaceId);
-  res.json({ message: "Switched workspace successfully", activeWorkspace: ws });
+  if (!workspaceId || typeof workspaceId !== "string") {
+    return res.status(400).json({ error: "workspaceId is required" });
+  }
+  if (req.user?.role !== "SUPER_ADMIN") {
+    return res.status(403).json({ error: "Workspace switching requires workspace-management permission", code: "PERMISSION_DENIED" });
+  }
+  const ws = enterpriseStore.getWorkspaces().find(
+    (candidate) => candidate.id === workspaceId && candidate.organizationId === req.user?.organizationId
+  );
+  if (!ws) {
+    return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  }
+  const permissions = ROLE_PERMISSIONS_MAP[req.user.role] || [];
+  const token = signAuthToken({
+    userId: req.user.userId,
+    email: req.user.email,
+    role: req.user.role,
+    organizationId: req.user.organizationId,
+    workspaceId: ws.id,
+    permissions,
+  });
+  res.json({ message: "Workspace context updated for this session", activeWorkspace: ws, token });
 });
 
 // Scope Policy & Authorized Rules of Engagement
-app.get("/api/v2/scope/policy", (req, res) => {
-  res.json(enterpriseStore.getActiveWorkspace().scopePolicy);
+app.get("/api/v2/scope/policy", (req: any, res) => {
+  const workspace = requestWorkspace(req);
+  if (!workspace) return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  res.json(workspace.scopePolicy);
 });
 
-app.put("/api/v2/scope/policy", (req, res) => {
-  const updatedPolicy = enterpriseStore.updateScopePolicy(req.body);
+app.put("/api/v2/scope/policy", (req: any, res) => {
+  const workspaceId = requestWorkspaceId(req);
+  const updatedPolicy = enterpriseStore.updateScopePolicy(req.body, workspaceId);
   res.json({ message: "Scope policy updated successfully", policy: updatedPolicy.scopePolicy });
 });
 
 // Asset Inventory
-app.get("/api/v2/assets", (req, res) => {
-  res.json(enterpriseStore.getAssets());
+app.get("/api/v2/assets", (req: any, res) => {
+  res.json(enterpriseStore.getAssets(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/assets", (req, res) => {
-  const asset = enterpriseStore.createAsset(req.body);
+app.post("/api/v2/assets", (req: any, res) => {
+  const asset = enterpriseStore.createAsset(req.body, requestWorkspaceId(req));
   res.status(201).json(asset);
 });
 
 // Unified Finding Lifecycle
-app.get("/api/v2/findings", (req, res) => {
-  res.json(enterpriseStore.getFindings());
+app.get("/api/v2/findings", (req: any, res) => {
+  res.json(enterpriseStore.getFindings(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/findings/:id/transition", (req, res) => {
@@ -1238,24 +1294,25 @@ app.post("/api/v2/findings/:id/transition", (req, res) => {
     req.params.id,
     newStatus,
     actorName || "SOC Analyst",
-    notes || "Status transitioned via SecOps console"
+    notes || "Status transitioned via SecOps console",
+    requestWorkspaceId(req)
   );
   if (!updated) return res.status(404).json({ error: "Finding not found" });
   res.json(updated);
 });
 
 // Unified Security Score
-app.get("/api/v2/security-score", (req, res) => {
-  res.json(enterpriseStore.calculateSecurityScore());
+app.get("/api/v2/security-score", (req: any, res) => {
+  res.json(enterpriseStore.calculateSecurityScore(requestWorkspaceId(req)));
 });
 
 // SOC Alerts & Incident Response
-app.get("/api/v2/alerts", (req, res) => {
-  res.json(enterpriseStore.getAlerts());
+app.get("/api/v2/alerts", (req: any, res) => {
+  res.json(enterpriseStore.getAlerts(requestWorkspaceId(req)));
 });
 
-app.get("/api/v2/incidents", (req, res) => {
-  res.json(enterpriseStore.getIncidents());
+app.get("/api/v2/incidents", (req: any, res) => {
+  res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
@@ -1263,7 +1320,8 @@ app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
   const result = enterpriseStore.executeIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    approverName || "Marcus Vance (CISO Desk)"
+    approverName || "Marcus Vance (CISO Desk)",
+    requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
   res.json(result);
@@ -1274,7 +1332,8 @@ app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req, res) => {
   const result = enterpriseStore.rollbackIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    actorName || "Elena Rostova (SOC Lead)"
+    actorName || "Elena Rostova (SOC Lead)",
+    requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
   res.json(result);
@@ -1285,8 +1344,8 @@ app.get("/api/v2/agents", (req, res) => {
   res.json(enterpriseStore.getAgents());
 });
 
-app.get("/api/v2/agents/runs", (req, res) => {
-  res.json(enterpriseStore.getAgentRuns());
+app.get("/api/v2/agents/runs", (req: any, res) => {
+  res.json(enterpriseStore.getAgentRuns(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), async (req: any, res) => {
@@ -1313,27 +1372,27 @@ app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), asy
 });
 
 // Evidence Center
-app.get("/api/v2/evidence", (req, res) => {
-  res.json(enterpriseStore.getEvidence());
+app.get("/api/v2/evidence", (req: any, res) => {
+  res.json(enterpriseStore.getEvidence(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/evidence", (req, res) => {
-  const item = enterpriseStore.addEvidence(req.body);
+app.post("/api/v2/evidence", (req: any, res) => {
+  const item = enterpriseStore.addEvidence(req.body, requestWorkspaceId(req));
   res.status(201).json(item);
 });
 
 // Reports & Audit Logs
-app.get("/api/v2/reports", (req, res) => {
-  res.json(enterpriseStore.getReports());
+app.get("/api/v2/reports", (req: any, res) => {
+  res.json(enterpriseStore.getReports(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/reports", (req, res) => {
-  const rep = enterpriseStore.createReport(req.body);
+app.post("/api/v2/reports", (req: any, res) => {
+  const rep = enterpriseStore.createReport(req.body, requestWorkspaceId(req));
   res.status(201).json(rep);
 });
 
-app.get("/api/v2/audit-events", (req, res) => {
-  res.json(enterpriseStore.getAuditEvents());
+app.get("/api/v2/audit-events", (req: any, res) => {
+  res.json(enterpriseStore.getAuditEvents(requestWorkspaceId(req)));
 });
 
 // AI & MCP Security Scanner Endpoint
@@ -1390,7 +1449,7 @@ app.post("/api/v2/ai-security/audit", (req, res) => {
 // ============================================================================
 
 // Production Health Check & Monitoring Hooks
-app.get("/api/health", async (req, res) => {
+app.get("/api/health", async (req: any, res) => {
   const dbHealth = await checkDatabaseHealth();
   const connectorStatuses = await connectorRegistry.getStatuses();
 
@@ -1404,38 +1463,97 @@ app.get("/api/health", async (req, res) => {
     uptimeSeconds: Math.floor(process.uptime()),
     database: dbHealth,
     integrations: connectorStatuses,
-    activeWorkspace: enterpriseStore.getActiveWorkspace().id,
-    securityPostureGrade: enterpriseStore.calculateSecurityScore().letterGrade,
+    activeWorkspace: req.tenantContext?.workspaceId || "unknown",
+    securityPostureGrade: enterpriseStore.calculateSecurityScore(req.tenantContext?.workspaceId || "ws-prod-defense").letterGrade,
     memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
   });
 });
 
 // Production Authentication: Login & Token Issuance
-app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required", code: "INVALID_CREDENTIALS" });
+app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!email || !password || email.length > 254 || password.length > 1024) {
+    return res.status(400).json({ error: "Valid email and password are required", code: "INVALID_CREDENTIALS" });
   }
 
-  const users = enterpriseStore.getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  let user: import("./src/db/models").User | undefined;
+  const pool = getPostgresPool();
 
-  if (!user) {
+  if (pool) {
+    try {
+      const result = await pool.query(
+        `SELECT u.id, u.email, u.full_name, u.role_id, u.default_organization_id,
+                u.default_workspace_id, u.is_active, u.password_hash, u.password_salt,
+                r.name AS role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+         WHERE LOWER(u.email) = $1
+         LIMIT 1`,
+        [email]
+      );
+      const row = result.rows[0];
+      if (row) {
+        user = {
+          id: row.id,
+          email: row.email,
+          fullName: row.full_name,
+          roleId: row.role_id,
+          roleName: row.role_name || "L1_ANALYST",
+          defaultOrganizationId: row.default_organization_id || "",
+          defaultWorkspaceId: row.default_workspace_id || "",
+          isActive: row.is_active === true,
+          passwordHash: typeof row.password_hash === "string" ? row.password_hash.trim() : undefined,
+          passwordSalt: typeof row.password_salt === "string" ? row.password_salt.trim() : undefined,
+        };
+      }
+    } catch (error) {
+      logger.error("Authentication database query failed", error);
+      return res.status(503).json({ error: "Authentication service temporarily unavailable", code: "AUTH_STORE_ERROR" });
+    }
+  } else if (process.env.NODE_ENV === "production") {
+    // Production authentication must never fall back to the in-memory demo identity store.
+    return res.status(503).json({
+      error: "Persistent authentication storage is not configured",
+      code: "AUTH_STORE_UNAVAILABLE",
+    });
+  } else {
+    user = enterpriseStore.getUsers().find((candidate) => candidate.email.toLowerCase() === email);
+  }
+
+  // Seed/demo users intentionally have no password hashes. Never issue a token merely
+  // because an email exists; provision real users with the secure CLI and persistent DB.
+  if (
+    !user ||
+    !user.isActive ||
+    !user.passwordHash ||
+    !user.passwordSalt ||
+    !verifyPassword(password, user.passwordHash, user.passwordSalt)
+  ) {
     return res.status(401).json({ error: "Invalid credentials", code: "AUTH_FAILED" });
   }
 
-  // Generate cryptographically signed token
-  const userRole = user.roleName || user.role || "L1_ANALYST";
-  const userOrg = user.defaultOrganizationId || user.organizationId || "org-defense-corp";
+  // Translate stored role identifiers into the server-owned authorization policy.
+  const roleById: Record<string, string> = {
+    "role-admin": "SUPER_ADMIN",
+    "role-soc-lead": "SOC_LEAD",
+    "role-analyst": "L2_ANALYST",
+  };
+  const candidateRole = roleById[user.roleId] || user.role?.toUpperCase() || user.roleName?.toUpperCase() || "";
+  const userRole = Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS_MAP, candidateRole)
+    ? candidateRole
+    : "L1_ANALYST";
+  const userOrg = user.defaultOrganizationId || "org-defense-corp";
   const userName = user.fullName || user.name || "Operator";
-  const userPerms = user.permissions || [];
+  const userPerms = ROLE_PERMISSIONS_MAP[userRole] || [];
+  const workspaceId = user.defaultWorkspaceId || "ws-prod-defense";
 
   const token = signAuthToken({
     userId: user.id,
     email: user.email,
     role: userRole,
     organizationId: userOrg,
-    workspaceId: enterpriseStore.getActiveWorkspace().id,
+    workspaceId,
     permissions: userPerms,
   });
 
@@ -1457,6 +1575,7 @@ app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res)
       email: user.email,
       role: userRole,
       organizationId: userOrg,
+      workspaceId,
       permissions: userPerms,
     },
   });

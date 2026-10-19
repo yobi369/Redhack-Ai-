@@ -74,8 +74,13 @@ export function hashPassword(password: string): { hash: string; salt: string } {
 }
 
 export function verifyPassword(password: string, hash: string, salt: string): boolean {
-  const checkHash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
-  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(checkHash, "hex"));
+  // Validate the stored representation before deriving or comparing. Invalid or
+  // corrupted database values must produce a normal authentication failure.
+  if (!/^[a-f0-9]{128}$/i.test(hash) || !/^[a-f0-9]{32}$/i.test(salt)) return false;
+
+  const checkHash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512");
+  const expectedHash = Buffer.from(hash, "hex");
+  return expectedHash.length === checkHash.length && crypto.timingSafeEqual(expectedHash, checkHash);
 }
 
 /**

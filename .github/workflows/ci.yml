@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gate (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.x]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check formatting (backend, security modules, and tests)
+        run: npm run format:check
+
+      - name: Summarize dependency advisories
+        shell: bash
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node -e 'const a=require(process.argv[1]); console.log("Dependency audit:", JSON.stringify(a.metadata?.vulnerabilities || {})); for (const [name,v] of Object.entries(a.vulnerabilities || {})) console.log(`${v.severity.toUpperCase()} ${name} | direct=${v.isDirect} | fix=${JSON.stringify(v.fixAvailable)}`)' "$RUNNER_TEMP/npm-audit.json"
+
+      - name: Block high and critical production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint and type-check
+        run: npm run lint
+
+      - name: Run unit and integration tests with coverage thresholds
+        run: npm run test:coverage
+
+      - name: Run legacy regression suites
+        run: npm run test:legacy
+
+      - name: Build production artifacts
+        run: npm run build
+
+  container:
+    name: Container build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build --tag redhack-ai:ci .
+
+      - name: Smoke-test production container
+        shell: bash
+        run: |
+          docker run --detach --name redhack-ai-ci --publish 127.0.0.1:3000:3000 \
+            --env NODE_ENV=production \
+            --env JWT_SECRET=ci-only-secret-with-more-than-32-characters-000000 \
+            redhack-ai:ci
+          cleanup() {
+            docker logs redhack-ai-ci || true
+            docker rm --force redhack-ai-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/api/healthz; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container did not become healthy within 60 seconds" >&2
+          exit 1

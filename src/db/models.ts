@@ -75,6 +75,10 @@ export interface User {
   defaultOrganizationId: string;
   defaultWorkspaceId: string;
   isActive: boolean;
+  /** PBKDF2-SHA512 hash stored as 128 hex characters; never store plaintext passwords. */
+  passwordHash?: string;
+  /** Random 16-byte salt stored as 32 hex characters. */
+  passwordSalt?: string;
   lastLoginAt?: string;
   name?: string;
   role?: string;

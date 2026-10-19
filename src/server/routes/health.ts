@@ -16,7 +16,7 @@ export const healthRouter = Router();
 healthRouter.get("/healthz", (req: Request, res: Response) => {
   return res.status(200).json({
     status: "ALIVE",
-    uptime: Math.floor(process.uptime()),
+    uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });
 });

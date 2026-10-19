@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS users (
     default_organization_id VARCHAR(64) REFERENCES organizations(id),
     default_workspace_id VARCHAR(64) REFERENCES workspaces(id),
     is_active BOOLEAN DEFAULT TRUE,
+    password_hash CHAR(128),
+    password_salt CHAR(32),
     last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
