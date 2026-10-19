@@ -1449,7 +1449,7 @@ app.post("/api/v2/ai-security/audit", (req, res) => {
 // ============================================================================
 
 // Production Health Check & Monitoring Hooks
-app.get("/api/health", async (req, res) => {
+app.get("/api/health", async (req: any, res) => {
   const dbHealth = await checkDatabaseHealth();
   const connectorStatuses = await connectorRegistry.getStatuses();
 
