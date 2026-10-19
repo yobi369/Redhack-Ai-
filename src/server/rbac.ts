@@ -326,14 +326,16 @@ export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response,
     req.params?.workspaceId,
     req.body?.workspaceId,
     req.query?.workspaceId,
-  ].flatMap((value) => (Array.isArray(value) ? value : [value]))
+  ]
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
     .filter((value) => value !== undefined && value !== null && value !== "");
 
   if (workspaceCandidates.length > 0 && req.user?.role !== "SUPER_ADMIN") {
     if (
       !req.tenantContext ||
       workspaceCandidates.some(
-        (workspaceId) => typeof workspaceId !== "string" || workspaceId !== req.tenantContext?.workspaceId
+        (workspaceId) =>
+          typeof workspaceId !== "string" || workspaceId !== req.tenantContext?.workspaceId
       )
     ) {
       return res.status(403).json({
