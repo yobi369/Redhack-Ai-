@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.js",
-    "start": "node server.ts",
+    "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"server.ts\" \"scripts/**/*.ts\" && tsc --noEmit",
