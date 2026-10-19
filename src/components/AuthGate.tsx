@@ -16,6 +16,8 @@ export default function AuthGate({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userName, setUserName] = useState("");
+  const [readOnlyDemo, setReadOnlyDemo] = useState(false);
+  const [readOnlyDemoAvailable, setReadOnlyDemoAvailable] = useState(false);
 
   useEffect(() => {
     const onExpired = () => {
@@ -41,9 +43,11 @@ export default function AuthGate({ children }: PropsWithChildren) {
       const result = (await response.json()) as LoginResponse;
 
       if (!response.ok || !result.token || !result.user) {
+        const authStoreUnavailable = result.code === "AUTH_STORE_UNAVAILABLE";
+        setReadOnlyDemoAvailable(authStoreUnavailable);
         setError(
-          result.code === "AUTH_STORE_UNAVAILABLE"
-            ? "Sign-in is unavailable because persistent authentication is not configured."
+          authStoreUnavailable
+            ? "Persistent authentication is not configured. You can continue in a restricted read-only demo."
             : "Sign-in failed. Check your credentials and try again."
         );
         return;
@@ -51,6 +55,8 @@ export default function AuthGate({ children }: PropsWithChildren) {
 
       setSessionToken(result.token);
       setUserName(result.user.name || result.user.email);
+      setReadOnlyDemo(false);
+      setReadOnlyDemoAvailable(false);
       setPassword("");
       setAuthenticated(true);
     } catch {
@@ -64,6 +70,8 @@ export default function AuthGate({ children }: PropsWithChildren) {
     clearSessionToken();
     setAuthenticated(false);
     setUserName("");
+    setReadOnlyDemo(false);
+    setReadOnlyDemoAvailable(false);
     setPassword("");
     setError("");
   }
@@ -73,7 +81,7 @@ export default function AuthGate({ children }: PropsWithChildren) {
       <>
         {isProduction && authenticated && (
           <div className="fixed right-4 top-4 z-[100] flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-lg">
-            <span className="max-w-40 truncate">{userName}</span>
+            <span className="max-w-40 truncate">{readOnlyDemo ? "Read-only demo" : userName}</span>
             <button
               type="button"
               onClick={handleSignOut}
@@ -133,6 +141,23 @@ export default function AuthGate({ children }: PropsWithChildren) {
             <p role="alert" className="rounded-lg border border-rose-900 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">
               {error}
             </p>
+          )}
+
+          {readOnlyDemoAvailable && (
+            <button
+              type="button"
+              onClick={() => {
+                clearSessionToken();
+                setReadOnlyDemo(true);
+                setUserName("Read-only demo");
+                setAuthenticated(true);
+                setError("");
+                setReadOnlyDemoAvailable(false);
+              }}
+              className="w-full rounded-lg border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+            >
+              Continue in read-only demo mode
+            </button>
           )}
 
           <button
