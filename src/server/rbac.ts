@@ -322,13 +322,15 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
 export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   // Validate every supplied selector, not just the first truthy value. Otherwise a matching
   // body value could mask a conflicting query or path value consumed by a route handler.
-  const workspaceCandidates = [
-    req.params?.workspaceId,
-    req.body?.workspaceId,
-    req.query?.workspaceId,
-  ].flatMap((value) => (Array.isArray(value) ? value : [value])).filter(
-    (value) => value !== undefined && value !== null && value !== ""
-  );
+  const workspaceCandidates: unknown[] = [];
+  for (const value of [req.params?.workspaceId, req.body?.workspaceId, req.query?.workspaceId]) {
+    const candidates = Array.isArray(value) ? value : [value];
+    for (const candidate of candidates) {
+      if (candidate !== undefined && candidate !== null && candidate !== "") {
+        workspaceCandidates.push(candidate);
+      }
+    }
+  }
 
   if (workspaceCandidates.length > 0 && req.user?.role !== "SUPER_ADMIN") {
     if (
