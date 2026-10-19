@@ -123,6 +123,24 @@ describe("Production authentication and authorization boundaries", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("rejects a conflicting query workspace even when the body workspace matches", () => {
+    const req = {
+      params: {},
+      body: { workspaceId: "ws-a" },
+      query: { workspaceId: "ws-other-tenant" },
+      tenantContext: { organizationId: "org-a", workspaceId: "ws-a" },
+      user: { role: "L1_ANALYST" },
+    } as any;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    enforceTenantIsolation(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TENANT_ISOLATION_VIOLATION" }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("fails closed when a workspace is requested without authenticated tenant context", () => {
     const req = {
       params: { workspaceId: "ws-a" },

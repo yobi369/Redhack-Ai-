@@ -320,14 +320,26 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
  * Ensures operations on resources only affect the authenticated workspace
  */
 export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const targetWorkspace = req.params.workspaceId || req.body.workspaceId || req.query.workspaceId;
+  // Validate every supplied selector, not just the first truthy value. Otherwise a matching
+  // body value could mask a conflicting query or path value consumed by a route handler.
+  const workspaceCandidates: unknown[] = [];
+  for (const value of [req.params?.workspaceId, req.body?.workspaceId, req.query?.workspaceId]) {
+    const candidates = Array.isArray(value) ? value : [value];
+    for (const candidate of candidates) {
+      if (candidate !== undefined && candidate !== null && candidate !== "") {
+        workspaceCandidates.push(candidate);
+      }
+    }
+  }
 
-  if (targetWorkspace && req.user?.role !== "SUPER_ADMIN") {
-    if (!req.tenantContext || targetWorkspace !== req.tenantContext.workspaceId) {
-      return res.status(403).json({
-        error: "Forbidden: Tenant boundary violation. Access across isolated workspaces is denied.",
-        code: "TENANT_ISOLATION_VIOLATION",
-      });
+  if (workspaceCandidates.length > 0 && req.user?.role !== "SUPER_ADMIN") {
+    for (const workspaceId of workspaceCandidates) {
+      if (typeof workspaceId !== "string" || !req.tenantContext || workspaceId !== req.tenantContext.workspaceId) {
+        return res.status(403).json({
+          error: "Forbidden: Tenant boundary violation. Access across isolated workspaces is denied.",
+          code: "TENANT_ISOLATION_VIOLATION",
+        });
+      }
     }
   }
 
