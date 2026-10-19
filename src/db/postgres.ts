@@ -157,29 +157,40 @@ export async function runDatabaseMigrations(): Promise<{ success: boolean; appli
 
       const schemaSql = fs.readFileSync(schemaPath, "utf8");
 
-      // Check if baseline schema is already applied
-      const checkRes = await client.query(
+      let appliedCount = 0;
+
+      // Apply the baseline only once. Incremental migrations below must still run on
+      // databases where the baseline is already installed.
+      const baseline = await client.query(
         "SELECT version FROM schema_migrations WHERE version = '001_baseline_v2'"
       );
-
-      if (checkRes.rows.length === 0) {
+      if (baseline.rows.length === 0) {
         console.log("[MIGRATIONS] Applying baseline schema 001_baseline_v2...");
         await client.query(schemaSql);
-        await client.query(
-          "INSERT INTO schema_migrations (version) VALUES ('001_baseline_v2')"
-        );
-        return {
-          success: true,
-          appliedCount: 1,
-          message: "Baseline PostgreSQL schema (21 tables, indexes & constraints) applied successfully.",
-        };
-      } else {
-        return {
-          success: true,
-          appliedCount: 0,
-          message: "Database schema is up to date (001_baseline_v2 already applied).",
-        };
+        await client.query("INSERT INTO schema_migrations (version) VALUES ('001_baseline_v2')");
+        appliedCount += 1;
       }
+
+      const credentialsMigration = await client.query(
+        "SELECT version FROM schema_migrations WHERE version = '002_user_password_credentials'"
+      );
+      if (credentialsMigration.rows.length === 0) {
+        console.log("[MIGRATIONS] Applying migration 002_user_password_credentials...");
+        await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash CHAR(128)");
+        await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt CHAR(32)");
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ('002_user_password_credentials')"
+        );
+        appliedCount += 1;
+      }
+
+      return {
+        success: true,
+        appliedCount,
+        message: appliedCount > 0
+          ? `Applied ${appliedCount} database migration(s) successfully.`
+          : "Database schema is up to date (002_user_password_credentials already applied).",
+      };
     } finally {
       client.release();
     }
