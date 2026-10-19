@@ -1,8 +1,8 @@
 # REDHACK AI v2.1 — Production Cyber Operations OS & Multi-Agent SecOps Platform
 
 [![Vercel Deployment](https://img.shields.io/badge/Deployment-Live%20on%20Vercel-success)](https://redhack-ai.vercel.app)
-[![CI Quality Gate](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions%20Passing-brightgreen)](.github/workflows/ci.yml)
-[![Tests Passing](https://img.shields.io/badge/Tests-109%2F109%20Passing%20(100%25)-brightgreen)](tests/)
+[![CI Quality Gate](https://github.com/yobi369/Redhack-Ai-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yobi369/Redhack-Ai-/actions/workflows/ci.yml)
+[![Automated Tests](https://img.shields.io/badge/tests-Vitest%20%2B%20regression-blue)](tests/)
 [![Test Framework](https://img.shields.io/badge/Test%20Framework-Vitest%20%2B%20V8%20Coverage-blue)](vitest.config.ts)
 [![Code Style](https://img.shields.io/badge/Code%20Style-ESLint%20%2B%20Prettier-informational)](eslint.config.js)
 [![Security Model](https://img.shields.io/badge/Security-RBAC%20%26%20Human--in--the--Loop-red)](SECURITY.md)
@@ -10,7 +10,7 @@
 > *"Offense Builds Insight. Defense Builds Resilience. Know Both. Protect All."*  
 > *Authored in the spirit of TuChii Hunnid's ethical cybersecurity framework.*
 
-**RedHack AI v2.1** is a modular, production-hardened Cyber Operations OS and multi-agent SecOps orchestration platform. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and multi-tenant isolation.
+**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and multi-tenant isolation.
 
 ---
 
@@ -61,7 +61,7 @@ RedHack AI organizes autonomous intelligence across 9 domain-specific security a
 ## 3. Verified Installation & Clean Setup
 
 ### Prerequisites
-- **Node.js:** `^20.x` or `^22.x` (verified on Node 22.23.2 and 20.x)
+- **Node.js:** `^22.12.0` or newer in the supported CI runtime (Vitest 5 requires Node.js 22.12+).
 - **Package Manager:** `npm` with committed `package-lock.json`
 - **PostgreSQL (Optional):** Version 14+ if using persistent relational storage.
 
@@ -91,9 +91,30 @@ npm start
 
 ---
 
-## 4. Testing & Coverage Architecture (109 Tests)
 
-RedHack AI v2.1 features a comprehensive, multi-layered testing architecture combining modern **Vitest** suites and platform verification runners:
+
+### Production authentication setup
+
+- Production API requests require a signed bearer token. Caller-supplied `x-dev-role` and `x-workspace-id` headers do not establish production identity or change a token's tenant.
+- Seed/demo users have no password hashes and cannot log in. Do not enable passwordless authentication to make the demo UI work.
+- Configure `DATABASE_URL` and a strong `JWT_SECRET` in the deployment's secret manager, then apply migrations with `npm run db:migrate`.
+- Provision the first administrator from a trusted shell. The password is read from an environment variable and stored as a salted PBKDF2 hash; never commit the values to `.env.example` or source control:
+
+```bash
+read -r -p "Administrator email: " REDHACK_BOOTSTRAP_EMAIL
+read -r -p "Administrator name: " REDHACK_BOOTSTRAP_NAME
+read -r -s -p "Unique administrator password (14+ characters): " REDHACK_BOOTSTRAP_PASSWORD
+echo
+export REDHACK_BOOTSTRAP_EMAIL REDHACK_BOOTSTRAP_NAME REDHACK_BOOTSTRAP_PASSWORD
+npm run user:provision
+unset REDHACK_BOOTSTRAP_PASSWORD REDHACK_BOOTSTRAP_EMAIL REDHACK_BOOTSTRAP_NAME
+```
+
+The provisioning command refuses to overwrite an existing account. Production authentication is unavailable until persistent storage and credentials are configured.
+
+## 4. Automated Testing & Coverage Architecture
+
+RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Test counts are taken from the CI run rather than a hard-coded badge.
 
 | Test Layer | Framework / Runner | Test Count | Status |
 | :--- | :--- | :---: | :---: |
