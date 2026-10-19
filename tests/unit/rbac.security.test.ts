@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import {
   authenticate,
   authorizeApiRequest,
+  enforceTenantIsolation,
   hasPermission,
   requirePermission,
   PERMISSIONS,
@@ -102,6 +103,43 @@ describe("Production authentication and authorization boundaries", () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TENANT_CONTEXT_MISMATCH" }));
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects explicit cross-workspace targets on authenticated requests", () => {
+    const req = {
+      params: {},
+      body: { workspaceId: "ws-other-tenant" },
+      query: {},
+      tenantContext: { organizationId: "org-a", workspaceId: "ws-a" },
+      user: { role: "L1_ANALYST" },
+    } as any;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    enforceTenantIsolation(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TENANT_ISOLATION_VIOLATION" })
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("allows matching workspace context and leaves the request unchanged", () => {
+    const req = {
+      params: {},
+      body: { workspaceId: "ws-a" },
+      query: {},
+      tenantContext: { organizationId: "org-a", workspaceId: "ws-a" },
+      user: { role: "L1_ANALYST" },
+    } as any;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    enforceTenantIsolation(req, res, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it("fails closed when a mutating API route has no explicit permission rule", () => {
