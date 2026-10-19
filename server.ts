@@ -65,6 +65,9 @@ app.use("/api", generalRateLimiter.middleware(150, 60000));
 
 // Attach Auth & Tenant Context, then enforce an explicit permission policy on API operations.
 app.use("/api", authenticate as any);
+// Reject caller-supplied workspace identifiers that do not match the signed session context.
+// The workspace-switch route remains guarded by its own SUPER_ADMIN and membership checks.
+app.use("/api", enforceTenantIsolation as any);
 app.use("/api", authorizeApiRequest as any);
 
 // Lazy GoogleGenAI client
