@@ -9,6 +9,7 @@ import {
   enforceTenantIsolation,
   PERMISSIONS,
   ROLE_PERMISSIONS_MAP,
+  authorizeApiRequest,
 } from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
 import { checkDatabaseHealth, getPostgresPool, runDatabaseMigrations } from "./src/db/postgres";
@@ -18,6 +19,7 @@ import { productionAgentRunner } from "./src/server/agentRunner";
 import helmet from "helmet";
 import { logger, generateCorrelationId } from "./src/server/logger";
 import { validateEnvironment, getConfig } from "./src/server/config";
+import { healthRouter } from "./src/server/routes/health";
 
 dotenv.config();
 
@@ -54,11 +56,16 @@ app.use(
 // JSON Body Parser with safe payload limit
 app.use(express.json({ limit: "5mb" }));
 
+// Public liveness/readiness probes; keep them outside the authenticated API chain.
+app.use(healthRouter);
+app.use("/api", healthRouter);
+
 // General API Rate Limiter
 app.use("/api", generalRateLimiter.middleware(150, 60000));
 
-// Attach Auth & Tenant Context to API routes
+// Attach Auth & Tenant Context, then enforce an explicit permission policy on API operations.
 app.use("/api", authenticate as any);
+app.use("/api", authorizeApiRequest as any);
 
 // Lazy GoogleGenAI client
 let aiClient: GoogleGenAI | null = null;
