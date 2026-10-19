@@ -322,8 +322,8 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
 export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const targetWorkspace = req.params.workspaceId || req.body.workspaceId || req.query.workspaceId;
 
-  if (targetWorkspace && req.tenantContext) {
-    if (targetWorkspace !== req.tenantContext.workspaceId && req.user?.role !== "SUPER_ADMIN") {
+  if (targetWorkspace && req.user?.role !== "SUPER_ADMIN") {
+    if (!req.tenantContext || targetWorkspace !== req.tenantContext.workspaceId) {
       return res.status(403).json({
         error: "Forbidden: Tenant boundary violation. Access across isolated workspaces is denied.",
         code: "TENANT_ISOLATION_VIOLATION",
