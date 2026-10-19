@@ -123,6 +123,33 @@ describe("Production authentication and authorization boundaries", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("blocks every mutation from the read-only production demo identity", () => {
+    const req = {
+      path: "/v2/reports",
+      method: "POST",
+      user: {
+        userId: "readonly-demo",
+        email: "readonly-demo@localhost",
+        role: "SECURITY_AUDITOR",
+        organizationId: "org-defense-corp",
+        workspaceId: "ws-prod-defense",
+        permissions: [],
+      },
+      headers: {},
+      params: {},
+      body: {},
+      query: {},
+    } as any;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    authorizeApiRequest(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "READ_ONLY_DEMO" }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("keeps liveness and login endpoints reachable without a bearer token", () => {
     process.env.NODE_ENV = "production";
     const next = vi.fn() as unknown as NextFunction;
