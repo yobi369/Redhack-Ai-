@@ -125,6 +125,25 @@ describe("Production authentication and authorization boundaries", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a workspace is requested without authenticated tenant context", () => {
+    const req = {
+      params: { workspaceId: "ws-a" },
+      body: {},
+      query: {},
+      user: { role: "L1_ANALYST" },
+    } as any;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    enforceTenantIsolation(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "TENANT_ISOLATION_VIOLATION" })
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("allows matching workspace context and leaves the request unchanged", () => {
     const req = {
       params: {},
