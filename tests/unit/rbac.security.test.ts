@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { authenticate, authorizeApiRequest, hasPermission, requirePermission, PERMISSIONS } from "../../src/server/rbac";
+import {
+  authenticate,
+  authorizeApiRequest,
+  hasPermission,
+  requirePermission,
+  PERMISSIONS,
+} from "../../src/server/rbac";
 import { signAuthToken } from "../../src/server/security";
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -17,7 +23,10 @@ function responseMock() {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
   };
-  return res as unknown as Response & { status: ReturnType<typeof vi.fn>; json: ReturnType<typeof vi.fn> };
+  return res as unknown as Response & {
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
 }
 
 describe("Production authentication and authorization boundaries", () => {
