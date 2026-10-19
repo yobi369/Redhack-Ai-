@@ -32,7 +32,7 @@ describe("Production authentication and authorization boundaries", () => {
       query: {},
     } as unknown as Request;
     const res = responseMock();
-    const next = vi.fn<NextFunction>();
+    const next = vi.fn() as unknown as NextFunction;
 
     authenticate(req as any, res, next);
 
@@ -55,7 +55,7 @@ describe("Production authentication and authorization boundaries", () => {
       },
     } as any;
     const res = responseMock();
-    const next = vi.fn<NextFunction>();
+    const next = vi.fn() as unknown as NextFunction;
 
     requirePermission(PERMISSIONS.APPROVE_CONTAINMENT)(req, res, next);
 
@@ -86,7 +86,7 @@ describe("Production authentication and authorization boundaries", () => {
       query: {},
     } as unknown as Request;
     const res = responseMock();
-    const next = vi.fn<NextFunction>();
+    const next = vi.fn() as unknown as NextFunction;
 
     authenticate(req as any, res, next);
 
@@ -97,7 +97,7 @@ describe("Production authentication and authorization boundaries", () => {
 
   it("keeps liveness and login endpoints reachable without a bearer token", () => {
     process.env.NODE_ENV = "production";
-    const next = vi.fn<NextFunction>();
+    const next = vi.fn() as unknown as NextFunction;
     const res = responseMock();
 
     const req = {
