@@ -36,12 +36,32 @@ describe("API Routes & Security Middleware Integration", () => {
       expect(typeof data.uptimeSeconds).toBe("number");
     });
 
-    it("should respond with HTTP 200 on /readyz readiness probe", async () => {
+    it("should respond with HTTP 200 on /readyz readiness probe in test mode", async () => {
       const res = await fetch(`${baseUrl}/readyz`);
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.status).toBe("READY");
       expect(data.database).toBeDefined();
+    });
+
+    it("should fail production readiness when durable storage is not configured", async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalDatabaseUrl = process.env.DATABASE_URL;
+      process.env.NODE_ENV = "production";
+      delete process.env.DATABASE_URL;
+
+      try {
+        const res = await fetch(`${baseUrl}/readyz`);
+        expect(res.status).toBe(503);
+        const data = await res.json();
+        expect(data.status).toBe("NOT_READY");
+        expect(data.reason).toContain("PostgreSQL persistence");
+      } finally {
+        if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = originalNodeEnv;
+        if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = originalDatabaseUrl;
+      }
     });
 
     it("should respond with operational stats on /api/health", async () => {
