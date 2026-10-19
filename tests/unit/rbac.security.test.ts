@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { authenticate, hasPermission, requirePermission, PERMISSIONS } from "../../src/server/rbac";
+import { authenticate, authorizeApiRequest, hasPermission, requirePermission, PERMISSIONS } from "../../src/server/rbac";
 import { signAuthToken } from "../../src/server/security";
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -92,6 +92,25 @@ describe("Production authentication and authorization boundaries", () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TENANT_CONTEXT_MISMATCH" }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a mutating API route has no explicit permission rule", () => {
+    const req = {
+      path: "/v2/unreviewed-action",
+      method: "POST",
+      headers: {},
+      params: {},
+      body: {},
+      query: {},
+    } as unknown as Request;
+    const res = responseMock();
+    const next = vi.fn() as unknown as NextFunction;
+
+    authorizeApiRequest(req as any, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "ROUTE_PERMISSION_UNMAPPED" }));
     expect(next).not.toHaveBeenCalled();
   });
 
