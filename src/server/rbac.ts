@@ -326,9 +326,9 @@ export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response,
     req.params?.workspaceId,
     req.body?.workspaceId,
     req.query?.workspaceId,
-  ]
-    .flatMap((value) => (Array.isArray(value) ? value : [value]))
-    .filter((value) => value !== undefined && value !== null && value !== "");
+  ].flatMap((value) => (Array.isArray(value) ? value : [value])).filter(
+    (value) => value !== undefined && value !== null && value !== ""
+  );
 
   if (workspaceCandidates.length > 0 && req.user?.role !== "SUPER_ADMIN") {
     if (
