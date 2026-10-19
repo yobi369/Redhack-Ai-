@@ -334,11 +334,7 @@ export function enforceTenantIsolation(req: AuthenticatedRequest, res: Response,
 
   if (workspaceCandidates.length > 0 && req.user?.role !== "SUPER_ADMIN") {
     for (const workspaceId of workspaceCandidates) {
-      if (
-        typeof workspaceId !== "string" ||
-        !req.tenantContext ||
-        workspaceId !== req.tenantContext.workspaceId
-      ) {
+      if (typeof workspaceId !== "string" || !req.tenantContext || workspaceId !== req.tenantContext.workspaceId) {
         return res.status(403).json({
           error: "Forbidden: Tenant boundary violation. Access across isolated workspaces is denied.",
           code: "TENANT_ISOLATION_VIOLATION",
