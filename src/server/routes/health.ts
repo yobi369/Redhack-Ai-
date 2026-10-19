@@ -30,6 +30,16 @@ healthRouter.get("/readyz", async (req: Request, res: Response) => {
   const config = getConfig();
   const dbHealth = await checkDatabaseHealth();
 
+  // Production cannot be ready without durable database storage.
+  if (config.isProduction && !config.databaseUrl) {
+    logger.error("Readiness probe failed: DATABASE_URL is required in production");
+    return res.status(503).json({
+      status: "NOT_READY",
+      reason: "Production requires configured PostgreSQL persistence",
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // If a DATABASE_URL is configured but connection fails, report 503
   if (config.databaseUrl && !dbHealth.isConnected) {
     logger.warn("Readiness probe check failed: PostgreSQL configured but unreachable", { dbHealth });
