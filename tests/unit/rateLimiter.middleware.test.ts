@@ -26,7 +26,7 @@ describe("Rate limiter middleware", () => {
       return res as unknown as Response & { status: ReturnType<typeof vi.fn> };
     };
 
-    const next = vi.fn<NextFunction>();
+    const next = vi.fn() as unknown as NextFunction;
     middleware(req, makeResponse(), next);
     middleware(req, makeResponse(), next);
     const blockedResponse = makeResponse();
