@@ -1,4 +1,4 @@
-# REDHACK AI v2.1 — Production Cyber Operations OS & Multi-Agent SecOps Platform
+# REDHACK AI v2.1 — Cyber Operations OS & Multi-Agent SecOps Platform
 
 [![Vercel Deployment](https://img.shields.io/badge/Deployment-Live%20on%20Vercel-success)](https://redhack-ai.vercel.app)
 [![CI Quality Gate](https://github.com/yobi369/Redhack-Ai-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yobi369/Redhack-Ai-/actions/workflows/ci.yml)
@@ -31,11 +31,11 @@
 ## 1. Architectural Highlights
 
 - **Unified Security Graph:** Connects Assets $\to$ Users $\to$ Applications $\to$ Cloud Workloads $\to$ Vulnerabilities $\to$ Threats $\to$ Alerts $\to$ Incidents.
-- **Server-Side RBAC & Tenant Isolation:** Strict tenant partitioning across workspaces (`ws-prod-defense`, `ws-isolated-sandbox`) enforcing least-privilege permission checks (`SUPER_ADMIN`, `SOC_LEAD`, `L2_ANALYST`, `L1_ANALYST`, `SECURITY_AUDITOR`).
-- **Resilient Dual-Tier Data Layer:** Native PostgreSQL connection pooling (`pg.Pool`) with automatic, graceful failover to an in-memory transactional store when standalone.
+- **Server-Side API Authorization:** API reads and writes are checked against a server-owned role/permission map; unknown mutation routes fail closed. Core v2 workspace operations use the authenticated token's workspace context. Complete persistence-backed membership enforcement remains a prerequisite for handling real customer tenants.
+- **Data Layer Status:** PostgreSQL connection pooling and versioned schema migrations are available. The current domain store still includes seeded in-memory data; do not treat it as durable production SOC storage until domain repositories are migrated to PostgreSQL.
 - **Mandatory Human-in-the-Loop Gates:** Destructive or high-impact actions (host quarantine, firewall block, scope change) pause for human review with automated rollback plans.
-- **Prompt Injection Defense Gateway:** Adversarial screening shielding AI agent inputs before reasoning dispatch.
-- **SSRF Defense:** Prevents link-local metadata exfiltration (`169.254.169.254`) and unauthorized loopback probes.
+- **Prompt Injection Heuristic:** Regex-based screening flags common adversarial phrases. This is a defense-in-depth signal, not a guarantee against prompt injection; tool permissions and human approval remain the security boundary.
+- **SSRF URL Screening:** The current URL validator blocks common metadata, loopback, and private IPv4 targets. DNS resolution/rebinding and redirect handling must be enforced by any network-fetching integration before treating it as a complete SSRF defense.
 - **Structured Observability:** Integrated `pino` logger with automatic secret redaction and `X-Correlation-ID` tracking.
 
 ---
@@ -58,7 +58,7 @@ RedHack AI organizes autonomous intelligence across 9 domain-specific security a
 
 ---
 
-## 3. Verified Installation & Clean Setup
+## 3. Installation & Clean Setup
 
 ### Prerequisites
 - **Node.js:** `^22.12.0` or newer in the supported CI runtime (Vitest 5 requires Node.js 22.12+).
