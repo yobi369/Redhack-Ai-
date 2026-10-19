@@ -143,6 +143,11 @@ export function hasPermission(role: string, permission: PermissionKey): boolean 
  * Authentication Middleware: Validates Bearer token or allows session bypass for local development/preview
  */
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  // These endpoints must remain reachable by platform health checks and unauthenticated
+  // clients establishing a session. All other production API routes fail closed.
+  const publicPaths = new Set(["/health", "/healthz", "/readyz", "/v2/auth/login"]);
+  if (publicPaths.has(req.path)) return next();
+
   const authHeader = req.headers.authorization;
   const devRoleHeader = (req.headers["x-dev-role"] as string) || "L1_ANALYST";
   const devWorkspaceHeader = (req.headers["x-workspace-id"] as string) || "ws-prod-defense";
@@ -159,17 +164,31 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
       });
     }
 
+    const requestedWorkspace = req.headers["x-workspace-id"] as string | undefined;
+    if (requestedWorkspace && requestedWorkspace !== verification.payload.workspaceId) {
+      return res.status(403).json({
+        error: "Forbidden: workspace context must match the authenticated token",
+        code: "TENANT_CONTEXT_MISMATCH",
+      });
+    }
+
     req.user = verification.payload;
     req.tenantContext = {
       organizationId: verification.payload.organizationId,
-      workspaceId: req.headers["x-workspace-id"]
-        ? (req.headers["x-workspace-id"] as string)
-        : verification.payload.workspaceId,
+      workspaceId: verification.payload.workspaceId,
     };
     return next();
   }
 
-  // Graceful fallback for UI session headers (permits interactive frontend workflows while tracking identity)
+  // Never accept caller-supplied role/workspace headers as production identity.
+  if (process.env.NODE_ENV === "production") {
+    return res.status(401).json({
+      error: "Unauthorized: a valid bearer token is required",
+      code: "AUTH_REQUIRED",
+    });
+  }
+
+  // Explicitly development/test-only compatibility for the demo UI.
   const role = devRoleHeader.toUpperCase();
   const permissions = ROLE_PERMISSIONS_MAP[role] || ROLE_PERMISSIONS_MAP.L1_ANALYST;
 
@@ -201,8 +220,9 @@ export function requirePermission(permission: PermissionKey) {
       return res.status(401).json({ error: "Unauthorized: Authentication required", code: "AUTH_REQUIRED" });
     }
 
-    const userPerms = req.user.permissions || [];
-    const hasPerm = userPerms.includes(permission) || req.user.role === "SUPER_ADMIN";
+    // Permission claims are informational only. Recompute authorization from the
+    // server-owned role policy so a token's permissions array cannot grant extra access.
+    const hasPerm = hasPermission(req.user.role, permission);
 
     if (!hasPerm) {
       return res.status(403).json({
