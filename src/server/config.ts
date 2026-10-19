@@ -54,14 +54,10 @@ export function validateEnvironment(): ConfigValidationResult {
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (dbUrl) {
     if (!dbUrl.startsWith("postgresql://") && !dbUrl.startsWith("postgres://")) {
-      errors.push(
-        "DATABASE_URL must be a valid PostgreSQL connection URI starting with postgresql:// or postgres://"
-      );
+      errors.push("DATABASE_URL must be a valid PostgreSQL connection URI starting with postgresql:// or postgres://");
     }
   } else if (isProduction) {
-    errors.push(
-      "DATABASE_URL is required in production. In-memory storage is not durable or safe for production SOC data."
-    );
+    errors.push("DATABASE_URL is required in production. In-memory storage is not durable or safe for production SOC data.");
   }
 
   // 4. Gemini API Key check
