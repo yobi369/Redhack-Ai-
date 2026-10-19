@@ -63,7 +63,7 @@ RedHack AI organizes autonomous intelligence across 9 domain-specific security a
 ### Prerequisites
 - **Node.js:** `^22.12.0` or newer in the supported CI runtime (Vitest 5 requires Node.js 22.12+).
 - **Package Manager:** `npm` with committed `package-lock.json`
-- **PostgreSQL (Optional):** Version 14+ if using persistent relational storage.
+- **PostgreSQL:** Version 14+ is required for production. In-memory mode is only for isolated local development/tests.
 
 ### Quickstart Commands
 ```bash
@@ -110,7 +110,7 @@ npm run user:provision
 unset REDHACK_BOOTSTRAP_PASSWORD REDHACK_BOOTSTRAP_EMAIL REDHACK_BOOTSTRAP_NAME
 ```
 
-The provisioning command refuses to overwrite an existing account. Production authentication is unavailable until persistent storage and credentials are configured.
+The provisioning command refuses to overwrite an existing account. Production authentication is unavailable until persistent storage and credentials are configured. Production must never run with the in-memory fallback; `/readyz` returns HTTP 503 when PostgreSQL is not configured or cannot be reached.
 
 ## 4. Automated Testing & Coverage Architecture
 
@@ -196,7 +196,7 @@ See `.env.example` for the complete template:
 | `NODE_ENV` | **Mandatory** | `development` | Runtime environment (`production`, `development`, `test`). |
 | `PORT` | Optional | `3000` | TCP listening port (1–65535). |
 | `JWT_SECRET` | **Mandatory in Prod** | Ephemeral in dev | HMAC-SHA256 signing secret. Must be $\ge$ 32 chars in production. |
-| `DATABASE_URL` | Optional | `in-memory` | PostgreSQL URI. Falls back to in-memory store if unset. |
+| `DATABASE_URL` | **Mandatory in Prod** | None in production; local demo only in dev/test | PostgreSQL URI. Production readiness fails when unset or unreachable; the in-memory store is not durable SOC storage. |
 | `GEMINI_API_KEY` | Optional | Offline fallback | Google Gemini API key for real-time generative SecOps intelligence. |
 | `APP_URL` | Optional | Host domain | Canonical URL for webhook and CORS verification. |
 
