@@ -17,7 +17,8 @@
     "test:vitest": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:legacy": "node --import tsx tests/run-tests.ts && node --import tsx tests/production-hardening.runner.ts",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "user:provision": "tsx scripts/provision-user.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
