@@ -136,9 +136,7 @@ describe("Production authentication and authorization boundaries", () => {
     enforceTenantIsolation(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ code: "TENANT_ISOLATION_VIOLATION" })
-    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "TENANT_ISOLATION_VIOLATION" }));
     expect(next).not.toHaveBeenCalled();
   });
 
