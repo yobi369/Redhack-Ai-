@@ -21,6 +21,11 @@ describe("Security Utilities & Cryptographic Controls", () => {
       expect(hash.length).toBe(128); // 64 bytes in hex = 128 chars
     });
 
+    it("should reject malformed stored hashes without throwing", () => {
+      expect(verifyPassword("any-password", "not-a-hash", "not-a-salt")).toBe(false);
+      expect(verifyPassword("any-password", "a".repeat(128), "invalid")).toBe(false);
+    });
+
     it("should correctly verify matching password and reject incorrect password", () => {
       const password = "CorrectHorseBatteryStaple!";
       const { hash, salt } = hashPassword(password);
