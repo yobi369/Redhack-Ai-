@@ -64,15 +64,18 @@ export class SlidingWindowRateLimiter {
   }
 
   public middleware(limit?: number, windowMs?: number) {
-    const activeMax = limit || this.maxRequests;
-    const activeWindow = windowMs || this.windowMs;
+    const activeMax = limit ?? this.maxRequests;
+    const activeWindow = windowMs ?? this.windowMs;
 
     return (req: Request, res: Response, next: NextFunction) => {
-      const clientIp =
-        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1";
-
-      const key = `${clientIp}:${req.path}`;
-      const result = this.check(key);
+      // req.ip honors Express's configured trusted-proxy policy. Never trust a raw
+      // X-Forwarded-For header here: clients can forge it and evade rate limits.
+      const clientIp = req.ip || req.socket.remoteAddress || "unknown";
+      // Use the mount path for app-level middleware to avoid unbounded per-URL keys.
+      // Route-level middleware uses the route template, not a user-controlled ID.
+      const scope = req.baseUrl || req.route?.path || req.path;
+      const key = `${clientIp}:${scope}`;
+      const result = this.check(key, activeMax, activeWindow);
 
       res.setHeader("X-RateLimit-Limit", activeMax);
       res.setHeader("X-RateLimit-Remaining", result.remaining);
