@@ -145,7 +145,7 @@ export function hasPermission(role: string, permission: PermissionKey): boolean 
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   // These endpoints must remain reachable by platform health checks and unauthenticated
   // clients establishing a session. All other production API routes fail closed.
-  const publicPaths = new Set(["/health", "/healthz", "/readyz", "/v2/auth/login"]);
+  const publicPaths = new Set(["/healthz", "/readyz", "/v2/auth/login"]);
   if (publicPaths.has(req.path)) return next();
 
   const authHeader = req.headers.authorization;
@@ -235,6 +235,57 @@ export function requirePermission(permission: PermissionKey) {
 
     next();
   };
+}
+
+/**
+ * API-wide authorization gate. Read routes require dashboard access; writes must
+ * match an explicit route-to-permission rule. Unknown mutation routes fail closed.
+ */
+export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const publicPaths = new Set(["/healthz", "/readyz", "/v2/auth/login"]);
+  if (publicPaths.has(req.path) || req.method === "OPTIONS") return next();
+
+  if (req.method === "GET" || req.method === "HEAD") {
+    return requirePermission(PERMISSIONS.VIEW_DASHBOARD)(req, res, next);
+  }
+
+  const writeRules: Array<[RegExp, PermissionKey]> = [
+    [/^\/telemetry\/ingest$/, PERMISSIONS.INGEST_EVIDENCE],
+    [/^\/soc\/cases\/[^/]+\/(notes|status)$/, PERMISSIONS.TRIAGE_ALERT],
+    [/^\/asm\/validate-target$/, PERMISSIONS.VIEW_ASSETS],
+    [/^\/asm\/scan$/, PERMISSIONS.RUN_PURPLE_SIMULATION],
+    [/^\/simulation\/run$/, PERMISSIONS.RUN_PURPLE_SIMULATION],
+    [/^\/simulation\/stop$/, PERMISSIONS.EMERGENCY_KILL_SWITCH],
+    [/^\/detection\/validate-rule$/, PERMISSIONS.RUN_AGENT_SCOPED],
+    [/^\/soar\/approve$/, PERMISSIONS.APPROVE_CONTAINMENT],
+    [/^\/soar\/rollback$/, PERMISSIONS.EXECUTE_ROLLBACK],
+    [/^\/(chat|analyze-log)$/, PERMISSIONS.RUN_AGENT_SCOPED],
+    [/^\/generate-report$/, PERMISSIONS.GENERATE_REPORTS],
+    [/^\/triage-alert$/, PERMISSIONS.TRIAGE_ALERT],
+    [/^\/generate-sigma-yara$/, PERMISSIONS.RUN_AGENT_SCOPED],
+    [/^\/v2\/workspaces\/switch$/, PERMISSIONS.MANAGE_WORKSPACES],
+    [/^\/v2\/scope\/policy$/, PERMISSIONS.MODIFY_ROE_SCOPE],
+    [/^\/v2\/assets$/, PERMISSIONS.MANAGE_WORKSPACES],
+    [/^\/v2\/findings\/[^/]+\/transition$/, PERMISSIONS.TRANSITION_FINDING],
+    [/^\/v2\/incidents\/[^/]+\/actions\/[^/]+\/execute$/, PERMISSIONS.EXECUTE_HOST_ISOLATION],
+    [/^\/v2\/incidents\/[^/]+\/actions\/[^/]+\/rollback$/, PERMISSIONS.EXECUTE_ROLLBACK],
+    [/^\/v2\/agents\/run$/, PERMISSIONS.RUN_AGENT_SCOPED],
+    [/^\/v2\/evidence$/, PERMISSIONS.INGEST_EVIDENCE],
+    [/^\/v2\/reports$/, PERMISSIONS.GENERATE_REPORTS],
+    [/^\/v2\/ai-security\/audit$/, PERMISSIONS.RUN_AGENT_SCOPED],
+    [/^\/v2\/database\/migrate$/, PERMISSIONS.MANAGE_USERS_ROLES],
+    [/^\/v2\/integrations\/[^/]+\/(test|sync)$/, PERMISSIONS.MANAGE_INTEGRATIONS],
+  ];
+
+  const match = writeRules.find(([pattern]) => pattern.test(req.path));
+  if (!match) {
+    return res.status(403).json({
+      error: "Forbidden: no authorization policy is configured for this API operation",
+      code: "ROUTE_PERMISSION_UNMAPPED",
+    });
+  }
+
+  return requirePermission(match[1])(req, res, next);
 }
 
 /**
