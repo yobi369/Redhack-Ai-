@@ -1206,44 +1206,85 @@ Return JSON matching:
 import { enterpriseStore } from "./src/db/store";
 
 // Workspaces & Multi-Tenancy
-app.get("/api/v2/workspaces", (req, res) => {
-  res.json(enterpriseStore.getWorkspaces());
+const requestWorkspaceId = (req: any): string =>
+  req.tenantContext?.workspaceId || req.user?.workspaceId || "ws-prod-defense";
+
+const requestWorkspace = (req: any) => {
+  const workspace = enterpriseStore.getWorkspaces().find(
+    (candidate) =>
+      candidate.id === requestWorkspaceId(req) &&
+      candidate.organizationId === req.tenantContext?.organizationId
+  );
+  return workspace || null;
+};
+
+app.get("/api/v2/workspaces", (req: any, res) => {
+  const organizationId = req.tenantContext?.organizationId;
+  res.json(
+    enterpriseStore.getWorkspaces().filter(
+      (workspace) => req.user?.role === "SUPER_ADMIN" || workspace.organizationId === organizationId
+    )
+  );
 });
 
-app.get("/api/v2/workspaces/active", (req, res) => {
-  res.json(enterpriseStore.getActiveWorkspace());
+app.get("/api/v2/workspaces/active", (req: any, res) => {
+  const workspace = requestWorkspace(req);
+  if (!workspace) return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  res.json(workspace);
 });
 
-app.post("/api/v2/workspaces/switch", (req, res) => {
+app.post("/api/v2/workspaces/switch", (req: any, res) => {
   const { workspaceId } = req.body;
-  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
-  const ws = enterpriseStore.setActiveWorkspace(workspaceId);
-  res.json({ message: "Switched workspace successfully", activeWorkspace: ws });
+  if (!workspaceId || typeof workspaceId !== "string") {
+    return res.status(400).json({ error: "workspaceId is required" });
+  }
+  if (req.user?.role !== "SUPER_ADMIN") {
+    return res.status(403).json({ error: "Workspace switching requires workspace-management permission", code: "PERMISSION_DENIED" });
+  }
+  const ws = enterpriseStore.getWorkspaces().find(
+    (candidate) => candidate.id === workspaceId && candidate.organizationId === req.user?.organizationId
+  );
+  if (!ws) {
+    return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  }
+  const permissions = ROLE_PERMISSIONS_MAP[req.user.role] || [];
+  const token = signAuthToken({
+    userId: req.user.userId,
+    email: req.user.email,
+    role: req.user.role,
+    organizationId: req.user.organizationId,
+    workspaceId: ws.id,
+    permissions,
+  });
+  res.json({ message: "Workspace context updated for this session", activeWorkspace: ws, token });
 });
 
 // Scope Policy & Authorized Rules of Engagement
-app.get("/api/v2/scope/policy", (req, res) => {
-  res.json(enterpriseStore.getActiveWorkspace().scopePolicy);
+app.get("/api/v2/scope/policy", (req: any, res) => {
+  const workspace = requestWorkspace(req);
+  if (!workspace) return res.status(403).json({ error: "Workspace is outside the authenticated tenant", code: "TENANT_ISOLATION_VIOLATION" });
+  res.json(workspace.scopePolicy);
 });
 
-app.put("/api/v2/scope/policy", (req, res) => {
-  const updatedPolicy = enterpriseStore.updateScopePolicy(req.body);
+app.put("/api/v2/scope/policy", (req: any, res) => {
+  const workspaceId = requestWorkspaceId(req);
+  const updatedPolicy = enterpriseStore.updateScopePolicy(req.body, workspaceId);
   res.json({ message: "Scope policy updated successfully", policy: updatedPolicy.scopePolicy });
 });
 
 // Asset Inventory
-app.get("/api/v2/assets", (req, res) => {
-  res.json(enterpriseStore.getAssets());
+app.get("/api/v2/assets", (req: any, res) => {
+  res.json(enterpriseStore.getAssets(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/assets", (req, res) => {
-  const asset = enterpriseStore.createAsset(req.body);
+app.post("/api/v2/assets", (req: any, res) => {
+  const asset = enterpriseStore.createAsset(req.body, requestWorkspaceId(req));
   res.status(201).json(asset);
 });
 
 // Unified Finding Lifecycle
-app.get("/api/v2/findings", (req, res) => {
-  res.json(enterpriseStore.getFindings());
+app.get("/api/v2/findings", (req: any, res) => {
+  res.json(enterpriseStore.getFindings(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/findings/:id/transition", (req, res) => {
@@ -1253,24 +1294,25 @@ app.post("/api/v2/findings/:id/transition", (req, res) => {
     req.params.id,
     newStatus,
     actorName || "SOC Analyst",
-    notes || "Status transitioned via SecOps console"
+    notes || "Status transitioned via SecOps console",
+    requestWorkspaceId(req)
   );
   if (!updated) return res.status(404).json({ error: "Finding not found" });
   res.json(updated);
 });
 
 // Unified Security Score
-app.get("/api/v2/security-score", (req, res) => {
-  res.json(enterpriseStore.calculateSecurityScore());
+app.get("/api/v2/security-score", (req: any, res) => {
+  res.json(enterpriseStore.calculateSecurityScore(requestWorkspaceId(req)));
 });
 
 // SOC Alerts & Incident Response
-app.get("/api/v2/alerts", (req, res) => {
-  res.json(enterpriseStore.getAlerts());
+app.get("/api/v2/alerts", (req: any, res) => {
+  res.json(enterpriseStore.getAlerts(requestWorkspaceId(req)));
 });
 
-app.get("/api/v2/incidents", (req, res) => {
-  res.json(enterpriseStore.getIncidents());
+app.get("/api/v2/incidents", (req: any, res) => {
+  res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
@@ -1278,7 +1320,8 @@ app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
   const result = enterpriseStore.executeIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    approverName || "Marcus Vance (CISO Desk)"
+    approverName || "Marcus Vance (CISO Desk)",
+    requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
   res.json(result);
@@ -1289,7 +1332,8 @@ app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req, res) => {
   const result = enterpriseStore.rollbackIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    actorName || "Elena Rostova (SOC Lead)"
+    actorName || "Elena Rostova (SOC Lead)",
+    requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
   res.json(result);
@@ -1300,8 +1344,8 @@ app.get("/api/v2/agents", (req, res) => {
   res.json(enterpriseStore.getAgents());
 });
 
-app.get("/api/v2/agents/runs", (req, res) => {
-  res.json(enterpriseStore.getAgentRuns());
+app.get("/api/v2/agents/runs", (req: any, res) => {
+  res.json(enterpriseStore.getAgentRuns(requestWorkspaceId(req)));
 });
 
 app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), async (req: any, res) => {
@@ -1328,27 +1372,27 @@ app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), asy
 });
 
 // Evidence Center
-app.get("/api/v2/evidence", (req, res) => {
-  res.json(enterpriseStore.getEvidence());
+app.get("/api/v2/evidence", (req: any, res) => {
+  res.json(enterpriseStore.getEvidence(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/evidence", (req, res) => {
-  const item = enterpriseStore.addEvidence(req.body);
+app.post("/api/v2/evidence", (req: any, res) => {
+  const item = enterpriseStore.addEvidence(req.body, requestWorkspaceId(req));
   res.status(201).json(item);
 });
 
 // Reports & Audit Logs
-app.get("/api/v2/reports", (req, res) => {
-  res.json(enterpriseStore.getReports());
+app.get("/api/v2/reports", (req: any, res) => {
+  res.json(enterpriseStore.getReports(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/reports", (req, res) => {
-  const rep = enterpriseStore.createReport(req.body);
+app.post("/api/v2/reports", (req: any, res) => {
+  const rep = enterpriseStore.createReport(req.body, requestWorkspaceId(req));
   res.status(201).json(rep);
 });
 
-app.get("/api/v2/audit-events", (req, res) => {
-  res.json(enterpriseStore.getAuditEvents());
+app.get("/api/v2/audit-events", (req: any, res) => {
+  res.json(enterpriseStore.getAuditEvents(requestWorkspaceId(req)));
 });
 
 // AI & MCP Security Scanner Endpoint
@@ -1419,8 +1463,8 @@ app.get("/api/health", async (req, res) => {
     uptimeSeconds: Math.floor(process.uptime()),
     database: dbHealth,
     integrations: connectorStatuses,
-    activeWorkspace: enterpriseStore.getActiveWorkspace().id,
-    securityPostureGrade: enterpriseStore.calculateSecurityScore().letterGrade,
+    activeWorkspace: req.tenantContext?.workspaceId || "unknown",
+    securityPostureGrade: enterpriseStore.calculateSecurityScore(req.tenantContext?.workspaceId || "ws-prod-defense").letterGrade,
     memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
   });
 });
