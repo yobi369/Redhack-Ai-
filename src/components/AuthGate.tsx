@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import { useEffect, useState, type FormEvent, type PropsWithChildren } from "react";
 import { clearSessionToken, setSessionToken } from "../lib/apiAuthorization";
 
