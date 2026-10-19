@@ -29,7 +29,7 @@ RedHack AI is designed as an extensible, AI-native **Cyber Operations Operating 
 │  [ PROMPT INJECTION SHIELD ] ──▶ Scans all agent inputs before inference dispatch                  │
 ├────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  [ DATA PERSISTENCE & POOLING ]                                                                    │
-│  PostgreSQL 14+ Connection Pool (pg.Pool) ──▶ Resilient In-Memory Transactional Store Fallback     │
+│  PostgreSQL Connection Pool + Versioned Schema Migrations; seeded domain store remains in memory     │
 │  - Assets Store             - Vulnerabilities & CVEs    - Normalized Telemetry Events              │
 │  - Finding Lifecycle Engine - Immutable Audit Ledger    - Multi-Tenant Workspaces & RoE Scope      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -40,7 +40,7 @@ RedHack AI is designed as an extensible, AI-native **Cyber Operations Operating 
 ## 2. Security Boundaries & Guardrails
 
 ### 2.1 Rules of Engagement (RoE) Scope Verification
-Every security evaluation, port probe, or purple-team adversary simulation must pass the server-side scope policy:
+Scope validation is exposed as a server-side API and scan workflows must call it before any outbound activity. The current application still contains simulated/legacy flows, so every connector must be independently verified to enforce scope before real network activity:
 - **Authorized Subnets & Domains:** Must belong to explicitly registered CIDR blocks or domain suffixes.
 - **Explicit Exclusions:** Core production databases (e.g. `db-primary.corp.internal`, `10.0.3.50`) and PCI-DSS environments are hard-blocked by policy.
 - **Zero Automatic Shell Execution:** RedHack AI never performs unvetted remote code execution or unauthorized exploitation.
@@ -53,7 +53,7 @@ Actions flagged with `isDestructiveOrConsequential: true` (e.g. `isolate_endpoin
 4. Every state transition is appended to the tamper-evident audit ledger with actor attribution and timestamps.
 
 ### 2.3 SSRF & Metadata Protection
-The SSRF validation gateway intercepts all external target URLs before outbound network requests:
+The URL-screening utility blocks several common unsafe targets:
 - Link-local IP `169.254.169.254` (AWS, GCP, Azure metadata services) is strictly blocked.
 - Loopback interfaces (`127.0.0.1`, `localhost`, `::1`) are forbidden.
 - Non-HTTP/HTTPS protocols (`file://`, `gopher://`, `dict://`) are rejected.
@@ -62,10 +62,11 @@ The SSRF validation gateway intercepts all external target URLs before outbound 
 
 ## 3. Multi-Tenant Workspace Architecture
 
-Data isolation is guaranteed across organizational boundaries:
-- **Tenant Context:** Injected into `req.tenantContext` by authentication middleware.
-- **Data Partitioning:** All database queries for assets, telemetry, findings, and cases filter strictly on `workspaceId`.
-- **Cross-Tenant Access Refusal:** Attempting to query or mutate an asset from another workspace triggers an immediate `403 Forbidden` (`TENANT_ISOLATION_VIOLATION`).
+Current implementation status:
+- **Token Context:** Authenticated requests receive a workspace and organization context from the signed token; client headers cannot replace the token's workspace.
+- **API Authorization:** Reads require dashboard access; writes map to explicit server-owned permissions. Unmapped mutation routes fail closed.
+- **Core v2 Workspace Operations:** Workspace lists are organization-filtered, and core asset/finding/incident/evidence/report store calls receive the token workspace ID.
+- **Important limitation:** The domain store still uses seeded in-memory data, and persistent workspace membership is not fully wired into all legacy routes. Do not use this version to store real multi-customer SOC data until the remaining legacy routes and domain repositories are migrated and tested.
 
 ---
 
@@ -89,5 +90,18 @@ Data isolation is guaranteed across organizational boundaries:
 
 - **Driver:** PostgreSQL via native `pg` client library.
 - **Connection Pool:** Configured for up to 20 concurrent connections with automatic idle cleanup (30s) and 5s connection timeouts.
-- **Resilience Strategy:** If `DATABASE_URL` is omitted (e.g. during standalone testing or demo evaluation), the platform seamlessly falls back to the in-memory transactional store with seed datasets.
-- **Migrations:** Managed via `scripts/migrate.ts` executing idempotent DDL statements in `src/db/schema.sql`.
+- **Current persistence boundary:** PostgreSQL is used for versioned schema migrations and production authentication credentials. Most SOC domain records are still held in a seeded in-memory store; they are not durable across restarts.
+- **Migrations:** `scripts/migrate.ts` applies the baseline schema and incremental migrations. The credential migration adds password-hash/salt columns to existing databases.
+- **Initial administrator:** After migrations, use `npm run user:provision` from a trusted shell. It requires `DATABASE_URL`, `REDHACK_BOOTSTRAP_EMAIL`, and `REDHACK_BOOTSTRAP_PASSWORD`; passwords are stored as salted PBKDF2 hashes. The command refuses to overwrite an existing email.
+
+## 6. Production Readiness Gate
+
+Before enabling authenticated production use:
+
+1. Configure a PostgreSQL instance and set `DATABASE_URL` in the deployment secret manager.
+2. Set a unique `JWT_SECRET` of at least 32 characters; rotate any previously exposed secret.
+3. Run `npm run db:migrate` and provision the first administrator with `npm run user:provision`.
+4. Verify login, expiry, permission denial, workspace boundaries, database failure handling, and audit records in the deployed environment.
+5. Migrate remaining domain CRUD operations from the in-memory seed store to workspace-scoped PostgreSQL repositories before storing real customer security data.
+
+If persistent authentication is not configured, the production UI offers a read-only demo mode. Mutations are rejected; the demo must not be mistaken for a fully deployed production SOC.
