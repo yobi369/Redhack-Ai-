@@ -3,7 +3,13 @@ import path from "path";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { generalRateLimiter, aiExecutionRateLimiter, authRateLimiter } from "./src/server/rateLimiter";
-import { authenticate, requirePermission, enforceTenantIsolation, PERMISSIONS } from "./src/server/rbac";
+import {
+  authenticate,
+  requirePermission,
+  enforceTenantIsolation,
+  PERMISSIONS,
+  ROLE_PERMISSIONS_MAP,
+} from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
 import { checkDatabaseHealth, runDatabaseMigrations } from "./src/db/postgres";
 import { connectorRegistry } from "./src/server/integrations";
@@ -16,6 +22,8 @@ import { validateEnvironment, getConfig } from "./src/server/config";
 dotenv.config();
 
 const app = express();
+// Trust the hosting platform's single proxy hop; rate limiting uses req.ip, never a raw header.
+app.set("trust proxy", 1);
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 // Request Correlation ID Middleware
@@ -1412,23 +1420,40 @@ app.get("/api/health", async (req, res) => {
 
 // Production Authentication: Login & Token Issuance
 app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required", code: "INVALID_CREDENTIALS" });
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!email || !password || email.length > 254 || password.length > 1024) {
+    return res.status(400).json({ error: "Valid email and password are required", code: "INVALID_CREDENTIALS" });
   }
 
   const users = enterpriseStore.getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const user = users.find((u) => u.email.toLowerCase() === email);
 
-  if (!user) {
+  // Seed/demo users intentionally have no password hashes. Never issue a token merely
+  // because an email exists; production identities must be provisioned with a salted hash.
+  if (
+    !user ||
+    !user.isActive ||
+    !user.passwordHash ||
+    !user.passwordSalt ||
+    !verifyPassword(password, user.passwordHash, user.passwordSalt)
+  ) {
     return res.status(401).json({ error: "Invalid credentials", code: "AUTH_FAILED" });
   }
 
-  // Generate cryptographically signed token
-  const userRole = user.roleName || user.role || "L1_ANALYST";
+  // Translate stored role identifiers into the server-owned authorization policy.
+  const roleById: Record<string, string> = {
+    "role-admin": "SUPER_ADMIN",
+    "role-soc-lead": "SOC_LEAD",
+    "role-analyst": "L2_ANALYST",
+  };
+  const candidateRole = roleById[user.roleId] || user.role?.toUpperCase() || user.roleName?.toUpperCase() || "";
+  const userRole = Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS_MAP, candidateRole)
+    ? candidateRole
+    : "L1_ANALYST";
   const userOrg = user.defaultOrganizationId || user.organizationId || "org-defense-corp";
   const userName = user.fullName || user.name || "Operator";
-  const userPerms = user.permissions || [];
+  const userPerms = ROLE_PERMISSIONS_MAP[userRole] || [];
 
   const token = signAuthToken({
     userId: user.id,
