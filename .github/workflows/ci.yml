@@ -35,8 +35,12 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Check formatting (backend, security modules, and tests)
-        run: npm run format:check
+      - name: Diagnose security-module formatting
+        shell: bash
+        run: |
+          npx prettier src/server/security.ts > "$RUNNER_TEMP/security-formatted.ts"
+          diff -u src/server/security.ts "$RUNNER_TEMP/security-formatted.ts" || true
+          npm run format:check
 
       - name: Summarize dependency advisories
         shell: bash
