@@ -80,7 +80,7 @@ app.use("/api", async (req: any, res, next) => {
     }
     return next();
   } catch (error) {
-    logger.error({ error }, "Workspace membership verification failed");
+    logger.error("Workspace membership verification failed");
     return res.status(503).json({ error: "Workspace authorization service unavailable", code: "WORKSPACE_AUTH_UNAVAILABLE" });
   }
 });
