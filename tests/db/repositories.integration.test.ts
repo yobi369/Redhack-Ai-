@@ -127,22 +127,16 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
       "CONFIRMED",
       workspaceA,
       userA,
-      "Integration evidence confirmed",
+      "Integration evidence confirmed"
     );
     expect(confirmed?.lifecycleStatus).toBe("CONFIRMED");
     expect(confirmed?.validationStatus).toBe("EXPLOITABILITY_CONFIRMED");
     expect(confirmed?.auditTrail.at(-1)?.actor).toBe(userA);
     await expect(
-      transitionFinding(findingId, "RESOLVED", workspaceB, userA, "cross-tenant attempt"),
+      transitionFinding(findingId, "RESOLVED", workspaceB, userA, "cross-tenant attempt")
     ).resolves.toBeNull();
 
-    const resolved = await transitionFinding(
-      findingId,
-      "RESOLVED",
-      workspaceA,
-      userB,
-      "Retest passed",
-    );
+    const resolved = await transitionFinding(findingId, "RESOLVED", workspaceA, userB, "Retest passed");
     expect(resolved?.remediationStatus).toBe("VERIFIED_FIXED");
     expect(resolved?.resolvedAt).toBeDefined();
   });
