@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getPostgresPool, runDatabaseMigrations } from "../../src/db/postgres";
 import {
@@ -120,7 +120,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
       {
         title: "Integration evidence",
         evidenceType: "raw_log",
-        sha256Hash: "a".repeat(64),
+        sha256Hash: createHash("sha256").update("synthetic integration fixture", "utf8").digest("hex"),
         chainOfCustody: [],
         content: "synthetic integration fixture",
         collectedBy: userA,
@@ -128,7 +128,8 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
       workspaceA
     );
     expect(evidence.workspaceId).toBe(workspaceA);
-    expect(evidence.sha256Hash).toBe("a".repeat(64));
+    expect(evidence.sha256Hash).toBe(createHash("sha256").update("synthetic integration fixture", "utf8").digest("hex"));
+    expect(evidence.chainOfCustody[0]?.verificationHash).toBe(evidence.sha256Hash);
     expect((await listEvidence(workspaceA)).some((item) => item.id === evidence.id)).toBe(true);
     expect((await listEvidence(workspaceB)).some((item) => item.id === evidence.id)).toBe(false);
   });
