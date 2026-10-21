@@ -1028,6 +1028,9 @@ export class EnterpriseStore {
     if (act.status !== "APPROVED") {
       return { success: false, message: "Action must be explicitly approved before execution" };
     }
+    if (act.approvedBy && act.approvedBy === executorName) {
+      return { success: false, message: "A different operator must execute an approved action" };
+    }
 
     act.status = "EXECUTED";
     act.executedBy = executorName;
