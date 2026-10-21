@@ -128,7 +128,9 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
       workspaceA
     );
     expect(evidence.workspaceId).toBe(workspaceA);
-    expect(evidence.sha256Hash).toBe(createHash("sha256").update("synthetic integration fixture", "utf8").digest("hex"));
+    expect(evidence.sha256Hash).toBe(
+      createHash("sha256").update("synthetic integration fixture", "utf8").digest("hex")
+    );
     expect(evidence.chainOfCustody[0]?.verificationHash).toBe(evidence.sha256Hash);
     expect((await listEvidence(workspaceA)).some((item) => item.id === evidence.id)).toBe(true);
     expect((await listEvidence(workspaceB)).some((item) => item.id === evidence.id)).toBe(false);
