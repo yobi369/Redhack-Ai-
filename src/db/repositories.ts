@@ -260,19 +260,19 @@ export async function transitionFinding(
 
     const updated = await client.query(
       `UPDATE findings
-          SET lifecycle_status = $1,
+          SET lifecycle_status = $1::varchar,
               remediation_status = CASE
-                WHEN $1 = 'RESOLVED' THEN 'VERIFIED_FIXED'
-                WHEN $1 = 'REMEDIATION' THEN 'IN_PROGRESS'
+                WHEN $1::varchar = 'RESOLVED' THEN 'VERIFIED_FIXED'
+                WHEN $1::varchar = 'REMEDIATION' THEN 'IN_PROGRESS'
                 ELSE remediation_status
               END,
               validation_status = CASE
-                WHEN $1 = 'CONFIRMED' THEN 'EXPLOITABILITY_CONFIRMED'
-                WHEN $1 = 'DISMISSED' THEN 'DISMISSED_OUT_OF_SCOPE'
+                WHEN $1::varchar = 'CONFIRMED' THEN 'EXPLOITABILITY_CONFIRMED'
+                WHEN $1::varchar = 'DISMISSED' THEN 'DISMISSED_OUT_OF_SCOPE'
                 ELSE validation_status
               END,
-              verified_at = CASE WHEN $1 = 'CONFIRMED' THEN NOW() ELSE verified_at END,
-              resolved_at = CASE WHEN $1 = 'RESOLVED' THEN NOW() ELSE resolved_at END,
+              verified_at = CASE WHEN $1::varchar = 'CONFIRMED' THEN NOW() ELSE verified_at END,
+              resolved_at = CASE WHEN $1::varchar = 'RESOLVED' THEN NOW() ELSE resolved_at END,
               audit_trail = $2::jsonb,
               updated_at = NOW()
         WHERE id = $3 AND workspace_id = $4
