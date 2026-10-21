@@ -202,6 +202,12 @@ export async function runDatabaseMigrations(): Promise<{ success: boolean; appli
             CREATE INDEX IF NOT EXISTS idx_incidents_workspace_created ON incidents(workspace_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_evidence_workspace_created ON evidence(workspace_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_memberships_workspace_user ON user_workspace_memberships(workspace_id, user_id);
+            INSERT INTO user_workspace_memberships (user_id, workspace_id, role_id)
+            SELECT u.id, u.default_workspace_id, u.role_id
+              FROM users u
+              JOIN workspaces w ON w.id = u.default_workspace_id
+             WHERE u.is_active = TRUE AND u.default_workspace_id IS NOT NULL
+            ON CONFLICT (user_id, workspace_id) DO NOTHING;
           `);
           await client.query("INSERT INTO schema_migrations (version) VALUES ('003_tenant_scoped_domain_data')");
           await client.query("COMMIT");
