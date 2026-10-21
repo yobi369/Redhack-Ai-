@@ -242,7 +242,7 @@ For responsible disclosure, see [SECURITY.md](SECURITY.md).
 | :--- | :---: | :--- | :--- |
 | **No committed npm lockfile** | Critical | Committed reproducible `package-lock.json` | `npm ci --dry-run` succeeds cleanly with 0 errors |
 | **No detected CI configuration** | 0/100 | Created `.github/workflows/ci.yml` (Matrix: Node 20/22) | Full CI workflow covering lint, test, build, audit, Docker |
-| **Ad-hoc test runner instead of framework** | 12/100 | Adopted **Vitest** with `@vitest/coverage-v8` | 8 Vitest suites (53 tests) + 2 legacy suites (56 tests) = **109 passing tests** |
+| **Ad-hoc test runner instead of framework** | 12/100 | Adopted **Vitest** with `@vitest/coverage-v8` | 8 Vitest suites (53 tests) + 2 legacy suites (56 tests) = the complete test suite |
 | **Low test-to-source ratio & coverage** | 12/100 | Added comprehensive unit, integration, and security tests | >71% line coverage on server and security modules |
 | **Hardcoded JWT fallback secret** | 35/100 | Removed static fallback; fail-fast production secret validation | `tests/security/regression.test.ts` passes |
 | **Incomplete environment documentation** | 62/100 | Updated `.env.example` with Mandatory vs Optional categorization | Full schema and security constraints documented |
