@@ -24,9 +24,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     if (!migration.success) throw new Error(migration.message);
     const pool = getPostgresPool();
     if (!pool) throw new Error("DATABASE_URL unexpectedly unavailable");
-    await pool.query("BEGIN");
-    try {
-      await pool.query("INSERT INTO organizations (id,name,slug,plan) VALUES ($1,'Integration Test Org',$2,'test')", [organizationId, `it-${suffix}`]);
+          await pool.query("INSERT INTO organizations (id,name,slug,plan) VALUES ($1,'Integration Test Org',$2,'test')", [organizationId, `it-${suffix}`]);
       await pool.query("INSERT INTO workspaces (id,organization_id,name,environment) VALUES ($1,$2,'Workspace A','lab'),($3,$2,'Workspace B','lab')", [workspaceA, organizationId, workspaceB]);
       await pool.query("INSERT INTO roles (id,name,description,is_system_role) VALUES ($1,$2,'Integration test role',FALSE)", [roleId, `Integration ${suffix}`]);
       await pool.query(
@@ -39,10 +37,6 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
          VALUES ($1,$2,'Integration containment','HIGH','ACTIVE',$3::jsonb)`,
         [incidentId, workspaceA, JSON.stringify([{ id: "action-1", action: "ISOLATE_HOST", target: "lab-host", status: "PENDING_APPROVAL", reversible: true }])],
       );
-    } catch (error) {
-      await pool.query("ROLLBACK");
-      throw error;
-    }
   });
 
   afterAll(async () => {
@@ -70,7 +64,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     createdAssetId = created.id;
     expect(created.workspaceId).toBe(workspaceA);
     expect((await listAssets(workspaceA)).some((asset) => asset.id === created.id)).toBe(true);
-    expect((await listAssets(workspaceB)).some((asset) => asset.id === assetId)).toBe(false);
+    expect((await listAssets(workspaceB)).some((asset) => asset.id === created.id)).toBe(false);
   });
 
   it("persists approval/execution/rollback transitions atomically and separates operators", async () => {
