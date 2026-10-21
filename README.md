@@ -10,7 +10,7 @@
 > *"Offense Builds Insight. Defense Builds Resilience. Know Both. Protect All."*  
 > *Authored in the spirit of TuChii Hunnid's ethical cybersecurity framework.*
 
-**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and multi-tenant isolation.
+**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and workspace-level request isolation. Full customer-grade tenant isolation still depends on completing persistent, tenant-scoped domain repositories.
 
 ---
 
@@ -179,8 +179,9 @@ npm run format
 - `POST /api/asm/validate-target` — Validates target IP/domain against authorized RoE scope.
 - `POST /api/asm/scan` — Executes scoped asset discovery.
 - `GET /api/soar/approvals` — Lists pending containment actions requiring human approval.
-- `POST /api/soar/approve` — Executes approved isolation action with audit logging.
-- `POST /api/soar/rollback` — Reverses previously approved containment action.
+- `POST /api/soar/approve` — Records an approval decision; does not execute the action.
+- `POST /api/soar/execute` — Records a separate execution state only after approval and requires a different authenticated operator. This demo endpoint does not claim to invoke an external security connector.
+- `POST /api/soar/rollback` — Records rollback state only for an action already marked executed.
 - `GET /api/governance/audit-logs` — Immutable audit trail of administrative and agent operations.
 
 ---
@@ -229,7 +230,7 @@ docker compose up -d
 3. **Prompt Injection Shield:** Adversarial jailbreak detection with automated execution abortion.
 4. **Rate Limiting:** Sliding-window rate limiter preventing API abuse and brute-force attacks.
 5. **Human Approval Gates:** Consequential actions cannot execute without explicit human sign-off.
-6. **Immutable Audit Trails:** Every finding transition, containment action, and agent run is logged.
+6. **Auditable Event Trails:** Every finding transition, containment action, and agent run is logged.
 
 For responsible disclosure, see [SECURITY.md](SECURITY.md).
 
