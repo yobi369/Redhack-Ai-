@@ -108,20 +108,53 @@ export function verifyAuthToken(token: string): { valid: boolean; payload?: Auth
     }
 
     const [header, body, signature] = parts;
+    const parsedHeader: unknown = JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    if (
+      !parsedHeader ||
+      typeof parsedHeader !== "object" ||
+      (parsedHeader as { alg?: unknown }).alg !== "HS256" ||
+      (parsedHeader as { typ?: unknown }).typ !== "JWT"
+    ) {
+      return { valid: false, error: "Unsupported token header" };
+    }
+
     const secret = getJwtSecret();
     const expectedSignature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
+    const actualSignatureBytes = Buffer.from(signature);
+    const expectedSignatureBytes = Buffer.from(expectedSignature);
 
-    const validSig = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-
-    if (!validSig) {
+    if (
+      actualSignatureBytes.length !== expectedSignatureBytes.length ||
+      !crypto.timingSafeEqual(actualSignatureBytes, expectedSignatureBytes)
+    ) {
       return { valid: false, error: "Invalid signature" };
     }
 
-    const payload: AuthTokenPayload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    const parsedPayload: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!parsedPayload || typeof parsedPayload !== "object" || Array.isArray(parsedPayload)) {
+      return { valid: false, error: "Invalid token payload" };
+    }
+    const payload = parsedPayload as AuthTokenPayload;
+    if (
+      typeof payload.userId !== "string" ||
+      typeof payload.email !== "string" ||
+      typeof payload.role !== "string" ||
+      typeof payload.organizationId !== "string" ||
+      typeof payload.workspaceId !== "string" ||
+      !Array.isArray(payload.permissions) ||
+      !payload.permissions.every((permission) => typeof permission === "string") ||
+      !Number.isFinite(payload.exp) ||
+      !Number.isFinite(payload.iat)
+    ) {
+      return { valid: false, error: "Invalid token payload claims" };
+    }
 
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp < now) {
+    if (payload.exp <= now) {
       return { valid: false, error: "Token expired" };
+    }
+    if (payload.iat > now + 60 || payload.exp <= payload.iat) {
+      return { valid: false, error: "Invalid token time claims" };
     }
 
     return { valid: true, payload };
@@ -221,6 +254,9 @@ export function validateSafeUrl(
         (a === 203 && b === 0 && c === 113) ||
         a === 255;
       if (blocked && !explicitAllow) {
+        if (a === 169 && b === 254) {
+          return { safe: false, reason: "Cloud instance metadata and link-local IPv4 targets are blocked." };
+        }
         return { safe: false, reason: "Non-public, special-use, or internal IPv4 targets are blocked." };
       }
     }
