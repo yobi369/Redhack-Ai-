@@ -5,8 +5,10 @@ import {
   approveIncidentAction,
   assertWorkspaceMembership,
   createAsset,
+  createEvidence,
   executeIncidentAction,
   listAssets,
+  listEvidence,
   listIncidents,
   rollbackIncidentAction,
 } from "../../src/db/repositories";
@@ -111,6 +113,24 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     expect(created.workspaceId).toBe(workspaceA);
     expect((await listAssets(workspaceA)).some((asset) => asset.id === created.id)).toBe(true);
     expect((await listAssets(workspaceB)).some((asset) => asset.id === created.id)).toBe(false);
+  });
+
+  it("persists evidence with a verified-format SHA-256 digest and workspace scope", async () => {
+    const evidence = await createEvidence(
+      {
+        title: "Integration evidence",
+        evidenceType: "raw_log",
+        sha256Hash: "a".repeat(64),
+        chainOfCustody: [],
+        content: "synthetic integration fixture",
+        collectedBy: userA,
+      },
+      workspaceA,
+    );
+    expect(evidence.workspaceId).toBe(workspaceA);
+    expect(evidence.sha256Hash).toBe("a".repeat(64));
+    expect((await listEvidence(workspaceA)).some((item) => item.id === evidence.id)).toBe(true);
+    expect((await listEvidence(workspaceB)).some((item) => item.id === evidence.id)).toBe(false);
   });
 
   it("persists approval, execution, and rollback atomically with different operators", async () => {
