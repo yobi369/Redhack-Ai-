@@ -9,7 +9,7 @@ RedHack AI is a security-operations and validation workbench. It must distinguis
 1. **Identity and tenant boundary:** authenticate the caller, derive organization/workspace membership from trusted server-side state, then authorize every operation against that state. Never treat request headers, prompt text, or agent output as identity or permission.
 2. **Agent boundary:** model output is untrusted input. Agents may propose actions and findings, but cannot grant themselves tools, expand scope, suppress audit events, or approve their own consequential actions.
 3. **Network boundary:** URL preflight is not enough to prevent SSRF. The network execution layer must resolve DNS, reject private/special-use results, pin the validated address for the connection, re-check redirects, cap response size/time, and block access to metadata endpoints at the egress layer.
-4. **Persistence boundary:** in-memory/demo data is not durable tenant storage. Do not use demo fallback data for real customer operations. Production readiness requires reachable PostgreSQL and the domain data paths to use tenant-scoped persistent repositories.
+4. **Persistence boundary:** in-memory/demo data is not durable tenant storage. Do not use demo fallback data for real customer operations. Assets, findings, incidents, evidence, and containment-action state now use tenant-scoped PostgreSQL repositories when configured. Authenticated API requests also verify active database-backed workspace membership. Legacy telemetry and several other demo-oriented domain paths remain in-memory; production readiness still requires migrating those remaining paths.
 5. **Evidence boundary:** every actionable finding should retain source, timestamp, scope, method, raw-evidence reference or digest, confidence, and validation status. Redact secrets and personal data from logs and exports.
 
 ## SSRF preflight behavior
@@ -20,7 +20,7 @@ RedHack AI is a security-operations and validation workbench. It must distinguis
 
 The incident action API enforces distinct states: `PENDING_APPROVAL → APPROVED → EXECUTED → ROLLED_BACK`. The approval and execution endpoints use separate server-side permission rules, audit identity comes from the authenticated session rather than caller-supplied display names, and the same identity cannot approve and execute the same action. Execution is rejected unless approval is recorded; rollback is rejected unless the action is recorded as executed.
 
-The legacy SOAR demo endpoint records workflow state only. It does not prove that a real EDR, firewall, or cloud connector performed the external action. The current store is in-memory, so these decisions are not durable across process restarts; production deployment requires persistent storage, transaction-safe state transitions, immutable or tamper-evident audit retention, and connector-specific execution evidence.
+The legacy SOAR demo endpoint records workflow state only. It does not prove that a real EDR, firewall, or cloud connector performed the external action. With PostgreSQL configured, the v2 incident-action routes persist approval/execution/rollback state and audit events transactionally. The legacy SOAR demo and other in-memory paths remain non-durable. These database records are not immutable or tamper-evident, and a recorded execution state is not proof of external connector execution.
 
 ## Evidence-to-remediation verification loop
 
