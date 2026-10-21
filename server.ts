@@ -714,11 +714,12 @@ app.post("/api/soar/approve", (req: any, res) => {
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
 
-  reqItem.status = "APPROVED_EXECUTED";
-  reqItem.approvedBy = approverName || "Senior Incident Commander";
-  reqItem.approvedAt = new Date().toLocaleTimeString() + " UTC";
-  reqItem.executedAt = new Date().toLocaleTimeString() + " UTC";
-  reqItem.executionOutput = `[SUCCESS] Containment policy applied: ${reqItem.actionType} on ${reqItem.targetResource}.`;
+  if (reqItem.status !== "PENDING_APPROVAL") {
+    return res.status(409).json({ error: "Only pending requests can be approved.", code: "INVALID_APPROVAL_STATE" });
+  }
+  reqItem.status = "APPROVED";
+  reqItem.approvedBy = approverName;
+  reqItem.approvedAt = new Date().toISOString();
 
   auditLogsStore.unshift({
     id: `AUDIT-${Date.now()}`,
@@ -728,7 +729,7 @@ app.post("/api/soar/approve", (req: any, res) => {
     action: "HIGH_CONSEQUENCE_ACTION_APPROVED",
     resource: reqItem.targetResource,
     status: "SUCCESS",
-    details: `Approved ${reqItem.actionTitle}. Command: ${reqItem.commandPreview}`,
+    details: `Approved ${reqItem.actionTitle}. Execution remains a separate step.`,
   });
 
   return res.json({ success: true, approval: reqItem });
