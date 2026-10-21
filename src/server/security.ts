@@ -179,10 +179,17 @@ export function validateSafeUrl(
     };
     const hostname = normalizeHost(parsed.hostname);
     const hostForIpCheck = hostname;
-    const explicitAllow = allowedInternalHosts.some((host) => normalizeHost(host) === hostForIpCheck);
+    const explicitAllow = allowedInternalHosts.some(
+      (host) => normalizeHost(host) === hostForIpCheck
+    );
 
-    if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") ||
-        hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+    if (
+      !hostname ||
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal")
+    ) {
       if (!explicitAllow) {
         return { safe: false, reason: "Local or internal hostnames are blocked by SSRF preflight." };
       }
