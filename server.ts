@@ -1321,6 +1321,18 @@ app.get("/api/v2/incidents", (req: any, res) => {
   res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
 });
 
+app.post("/api/v2/incidents/:id/actions/:actionId/approve", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const result = enterpriseStore.approveIncidentContainmentAction(
+    req.params.id,
+    req.params.actionId,
+    actor,
+    requestWorkspaceId(req)
+  );
+  if (!result.success) return res.status(400).json(result);
+  res.json(result);
+});
+
 app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req: any, res) => {
   const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const result = enterpriseStore.executeIncidentContainmentAction(
