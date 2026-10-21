@@ -3,6 +3,7 @@
 // ============================================================================
 
 import crypto from "crypto";
+import { isIP } from "node:net";
 
 const INSECURE_PLACEHOLDER_SECRETS = new Set([
   "redhack-production-enterprise-secret-salt-2026",
@@ -145,8 +146,12 @@ export function hashApiKey(rawKey: string): string {
 }
 
 /**
- * SSRF Prevention Validator
- * Prohibits SSRF attacks targeting cloud metadata (169.254.169.254), loopback (127.0.0.1), and unauthorized RFC1918 subnets
+ * SSRF URL preflight validator.
+ *
+ * This is deliberately only a preflight check: a caller performing network I/O
+ * must also resolve DNS, reject every non-public resolved address, pin the
+ * vetted address for the connection, and repeat validation after redirects.
+ * Do not treat this helper alone as a complete SSRF boundary.
  */
 export function validateSafeUrl(
   rawUrl: string,
@@ -159,30 +164,58 @@ export function validateSafeUrl(
       return { safe: false, reason: "Unsupported protocol. Only HTTP and HTTPS are permitted." };
     }
 
-    const hostname = parsed.hostname.toLowerCase();
-
-    // Check AWS/GCP/Azure link-local metadata address
-    if (hostname === "169.254.169.254" || hostname.startsWith("169.254.")) {
-      return { safe: false, reason: "Access to cloud instance metadata service (169.254.x.x) is strictly blocked." };
+    if (parsed.username || parsed.password) {
+      return { safe: false, reason: "URLs containing embedded credentials are not permitted." };
     }
 
-    // Check localhost / loopback
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname.startsWith("127.")) {
-      if (!allowedInternalHosts.includes(hostname)) {
-        return { safe: false, reason: "Access to loopback interface is forbidden." };
+    // Normalize DNS absolute names and IPv6 URL bracket notation before checks.
+    const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, "");
+    const hostForIpCheck = hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+    const explicitAllow = allowedInternalHosts.some(
+      (host) => host.toLowerCase().replace(/\\.$/, "").replace(/^\\[|\\]$/g, "") === hostForIpCheck
+    );
+
+    if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") ||
+        hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+      if (!explicitAllow) {
+        return { safe: false, reason: "Local or internal hostnames are blocked by SSRF preflight." };
       }
     }
 
-    // Check private subnets unless explicitly permitted
-    const isPrivate =
-      hostname.startsWith("10.") || hostname.startsWith("192.168.") || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+    const ipVersion = isIP(hostForIpCheck);
+    if (ipVersion === 6) {
+      // Fail closed for IPv6 literals until the network-fetch layer has a
+      // vetted, tested global-unicast classifier and address pinning.
+      if (!explicitAllow) {
+        return { safe: false, reason: "IPv6 literal targets require an explicit trusted-host allowlist." };
+      }
+    }
 
-    if (isPrivate && !allowedInternalHosts.includes(hostname)) {
-      return { safe: false, reason: "Access to unapproved internal subnet is blocked by SSRF defense." };
+    if (ipVersion === 4) {
+      const octets = hostForIpCheck.split(".").map(Number);
+      const [a, b, c] = octets;
+      const blocked =
+        a === 0 || a === 10 || a === 127 || a >= 224 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 192 && b === 0 && c === 0) ||
+        (a === 192 && b === 0 && c === 2) ||
+        (a === 192 && b === 88 && c === 99) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        (a === 198 && b === 51 && c === 100) ||
+        (a === 203 && b === 0 && c === 113) ||
+        a === 255;
+      if (blocked && !explicitAllow) {
+        return { safe: false, reason: "Non-public, special-use, or internal IPv4 targets are blocked." };
+      }
     }
 
     return { safe: true };
-  } catch (e: any) {
+  } catch {
     return { safe: false, reason: "Malformed or unparseable target URL." };
   }
 }
