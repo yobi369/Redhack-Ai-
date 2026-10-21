@@ -707,8 +707,10 @@ app.get("/api/soar/approvals", (req, res) => {
 });
 
 // Human Approval Gate Submission
-app.post("/api/soar/approve", (req, res) => {
-  const { approvalId, approverName, role = "L2_INVESTIGATOR" } = req.body;
+app.post("/api/soar/approve", (req: any, res) => {
+  const { approvalId } = req.body;
+  const approverName = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const role = req.user?.role || "UNKNOWN_ROLE";
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
 
@@ -733,8 +735,9 @@ app.post("/api/soar/approve", (req, res) => {
 });
 
 // Rollback Containment Action
-app.post("/api/soar/rollback", (req, res) => {
-  const { approvalId, actor = "Incident Responder" } = req.body;
+app.post("/api/soar/rollback", (req: any, res) => {
+  const { approvalId } = req.body;
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
 
@@ -1330,12 +1333,12 @@ app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req: any, res) => {
   res.json(result);
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req, res) => {
-  const { actorName } = req.body;
+app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const result = enterpriseStore.rollbackIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    actorName || "Elena Rostova (SOC Lead)",
+    actor,
     requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
