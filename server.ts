@@ -1472,9 +1472,16 @@ app.get("/api/v2/evidence", async (req: any, res) => {
 app.post("/api/v2/evidence", async (req: any, res) => {
   try {
     const workspaceId = requestWorkspaceId(req);
+    const evidenceInput = {
+      ...req.body,
+      collectedBy: req.user?.userId,
+    };
+    if (!evidenceInput.collectedBy) {
+      return res.status(401).json({ error: "Authenticated actor required", code: "EVIDENCE_ACTOR_REQUIRED" });
+    }
     const item = process.env.DATABASE_URL
-      ? await createEvidence(req.body, workspaceId)
-      : enterpriseStore.addEvidence(req.body, workspaceId);
+      ? await createEvidence(evidenceInput, workspaceId)
+      : enterpriseStore.addEvidence(evidenceInput, workspaceId);
     res.status(201).json(item);
   } catch (error: any) {
     res.status(400).json({ error: error.message || "Unable to store evidence", code: "EVIDENCE_CREATE_FAILED" });
