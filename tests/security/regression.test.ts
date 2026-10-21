@@ -8,7 +8,7 @@ import {
 } from "../../src/server/security";
 import { validateEnvironment } from "../../src/server/config";
 import { hasPermission, PERMISSIONS } from "../../src/server/rbac";
-import { enterpriseStore } from "../../src/db/store";
+import { EnterpriseStore, enterpriseStore } from "../../src/db/store";
 
 describe("DataFactor Security Hardening Regression Suite", () => {
   describe("DEFECT REGRESSION: Hardcoded JWT Secret Elimination", () => {
