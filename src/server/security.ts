@@ -216,7 +216,7 @@ export function validateSafeUrl(
     const hostname = normalizeHost(parsed.hostname);
     const hostForIpCheck = hostname;
     const explicitAllow = allowedInternalHosts.some(
-      (host) => normalizeHost(host) === hostForIpCheck
+      (host) => normalizeHost(host) === hostForIpCheck,
     );
 
     if (
@@ -250,7 +250,10 @@ export function validateSafeUrl(
       const octets = hostForIpCheck.split(".").map(Number);
       const [a, b, c] = octets;
       const blocked =
-        a === 0 || a === 10 || a === 127 || a >= 224 ||
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        a >= 224 ||
         (a === 100 && b >= 64 && b <= 127) ||
         (a === 169 && b === 254) ||
         (a === 172 && b >= 16 && b <= 31) ||
