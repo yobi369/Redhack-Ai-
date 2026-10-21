@@ -217,7 +217,9 @@ export interface IncidentContainmentAction {
   id: string;
   action: string;
   target: string;
-  status: "PENDING_APPROVAL" | "EXECUTED" | "ROLLED_BACK" | "REJECTED";
+  status: "PENDING_APPROVAL" | "APPROVED" | "EXECUTED" | "ROLLED_BACK" | "REJECTED";
+  approvedBy?: string;
+  approvedAt?: string;
   executedBy?: string;
   executedAt?: string;
   reversible: boolean;
