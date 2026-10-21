@@ -10,7 +10,7 @@
 > *"Offense Builds Insight. Defense Builds Resilience. Know Both. Protect All."*  
 > *Authored in the spirit of TuChii Hunnid's ethical cybersecurity framework.*
 
-**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and multi-tenant isolation.
+**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and workspace-level request isolation. Full customer-grade tenant isolation still depends on completing persistent, tenant-scoped domain repositories.
 
 ---
 
@@ -18,7 +18,7 @@
 1. [Architectural Highlights](#1-architectural-highlights)
 2. [Multi-Agent Swarm (9 Specialized Agents)](#2-multi-agent-swarm-9-specialized-agents)
 3. [Verified Installation & Clean Setup](#3-verified-installation--clean-setup)
-4. [Testing & Coverage Architecture (109 Tests)](#4-testing--coverage-architecture-109-tests)
+4. [Testing & Coverage Architecture](#4-testing--coverage-architecture)
 5. [Continuous Integration & Tooling](#5-continuous-integration--tooling)
 6. [API Endpoints & Health Probes](#6-api-endpoints--health-probes)
 7. [Environment Variables Reference](#7-environment-variables-reference)
@@ -114,18 +114,19 @@ The provisioning command refuses to overwrite an existing account. Production au
 
 ## 4. Automated Testing & Coverage Architecture
 
-RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Test counts are taken from the CI run rather than a hard-coded badge.
+RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Treat the latest successful workflow run as the source of truth for pass/fail counts; this document is not a live test report.
 
-| Test Layer | Framework / Runner | Test Count | Status |
-| :--- | :--- | :---: | :---: |
-| **Unit Tests (Security, RBAC, RateLimiter, Config)** | Vitest (v8) | 29 | **PASS** |
-| **Integration Tests (API, DB, AgentRunner)** | Vitest (v8) | 16 | **PASS** |
-| **Security Regression Suite (SSRF, Defect Gates)** | Vitest (v8) | 8 | **PASS** |
-| **Platform Verification Suite (CVSS, STIX, Scope)** | Node TSX Runner | 34 | **PASS** |
-| **Production Hardening Verification Suite** | Node TSX Runner | 22 | **PASS** |
-| **TOTAL VERIFIED PLATFORM TESTS** | | **109** | **100% PASS** |
+| Test Layer | Framework / Runner | Evidence |
+| :--- | :--- | :--- |
+| **Unit and security tests** | Vitest with V8 coverage | See the candidate commit's CI output and coverage artifact |
+| **Integration tests** | Vitest | See the candidate commit's CI output |
+| **Platform regression checks** | Node TSX runner | See the candidate commit's CI output |
+| **Production hardening checks** | Node TSX runner | See the candidate commit's CI output |
+| **Overall verification** | `npm test` | A passing result must be confirmed for the exact commit being evaluated |
 
 ### Running Tests
+Test counts and coverage are intentionally not treated as static guarantees. Run the commands below against the exact commit being evaluated and retain the CI result as evidence.
+
 ```bash
 # Run Vitest test suite with V8 code coverage threshold enforcement
 npm run test:coverage
@@ -133,22 +134,19 @@ npm run test:coverage
 # Run legacy platform verification suites
 npm run test:legacy
 
-# Run complete test suite (109 tests)
+# Run complete test suite
 npm test
 ```
 
-### Measured Code Coverage
-- **Lines:** 71.47% (Threshold: 60%)
-- **Statements:** 70.84% (Threshold: 60%)
-- **Branches:** 57.08% (Threshold: 50%)
-- **Functions:** 53.44% (Threshold: 50%)
+### Coverage policy
+The configured minimums are 60% lines, 60% statements, 50% branches, and 50% functions for the files included by `vitest.config.ts`. Coverage values change with each commit; consult the current CI artifact/output before quoting a measured percentage.
 
 ---
 
 ## 5. Continuous Integration & Tooling
 
 Continuous integration is enforced via **GitHub Actions** (`.github/workflows/ci.yml`):
-- **Matrix Testing:** Verified on Ubuntu with Node.js `20.x` and `22.x`.
+- **Runtime:** CI currently targets Node.js `22.x` on Ubuntu; the supported runtime is Node.js `^22.12.0` or newer.
 - **Steps:** `npm ci` $\to$ `npm run format:check` $\to$ `npm run lint` $\to$ `npx tsc --noEmit` $\to$ `npm run test:coverage` $\to$ `npm run build` $\to$ `npm audit` $\to$ Docker container build.
 - **Automated Dependency Updates:** Managed via `.github/dependabot.yml`.
 - **Linting & Code Style:** Enforced with `eslint.config.js` and `.prettierrc`.
@@ -181,9 +179,10 @@ npm run format
 - `POST /api/asm/validate-target` — Validates target IP/domain against authorized RoE scope.
 - `POST /api/asm/scan` — Executes scoped asset discovery.
 - `GET /api/soar/approvals` — Lists pending containment actions requiring human approval.
-- `POST /api/soar/approve` — Executes approved isolation action with audit logging.
-- `POST /api/soar/rollback` — Reverses previously approved containment action.
-- `GET /api/governance/audit-logs` — Immutable audit trail of administrative and agent operations.
+- `POST /api/soar/approve` — Records an approval decision; does not execute the action.
+- `POST /api/soar/execute` — Records a separate execution state only after approval and requires a different authenticated operator. This demo endpoint does not claim to invoke an external security connector.
+- `POST /api/soar/rollback` — Records rollback state only for an action already marked executed.
+- `GET /api/governance/audit-logs` — Administrative and agent audit events; current in-memory events are not durable or tamper-proof.
 
 ---
 
@@ -231,7 +230,7 @@ docker compose up -d
 3. **Prompt Injection Shield:** Adversarial jailbreak detection with automated execution abortion.
 4. **Rate Limiting:** Sliding-window rate limiter preventing API abuse and brute-force attacks.
 5. **Human Approval Gates:** Consequential actions cannot execute without explicit human sign-off.
-6. **Immutable Audit Trails:** Every finding transition, containment action, and agent run is logged.
+6. **Auditable Event Trails:** Every finding transition, containment action, and agent run is logged.
 
 For responsible disclosure, see [SECURITY.md](SECURITY.md).
 
@@ -243,7 +242,7 @@ For responsible disclosure, see [SECURITY.md](SECURITY.md).
 | :--- | :---: | :--- | :--- |
 | **No committed npm lockfile** | Critical | Committed reproducible `package-lock.json` | `npm ci --dry-run` succeeds cleanly with 0 errors |
 | **No detected CI configuration** | 0/100 | Created `.github/workflows/ci.yml` (Matrix: Node 20/22) | Full CI workflow covering lint, test, build, audit, Docker |
-| **Ad-hoc test runner instead of framework** | 12/100 | Adopted **Vitest** with `@vitest/coverage-v8` | 8 Vitest suites (53 tests) + 2 legacy suites (56 tests) = **109 passing tests** |
+| **Ad-hoc test runner instead of framework** | 12/100 | Adopted **Vitest** with `@vitest/coverage-v8` | 8 Vitest suites (53 tests) + 2 legacy suites (56 tests) = the complete test suite |
 | **Low test-to-source ratio & coverage** | 12/100 | Added comprehensive unit, integration, and security tests | >71% line coverage on server and security modules |
 | **Hardcoded JWT fallback secret** | 35/100 | Removed static fallback; fail-fast production secret validation | `tests/security/regression.test.ts` passes |
 | **Incomplete environment documentation** | 62/100 | Updated `.env.example` with Mandatory vs Optional categorization | Full schema and security constraints documented |

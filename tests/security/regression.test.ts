@@ -8,7 +8,21 @@ import {
 } from "../../src/server/security";
 import { validateEnvironment } from "../../src/server/config";
 import { hasPermission, PERMISSIONS } from "../../src/server/rbac";
-import { enterpriseStore } from "../../src/db/store";
+import { EnterpriseStore, enterpriseStore } from "../../src/db/store";
+
+describe("Incident action approval state", () => {
+  it("blocks execution until the action has been approved", () => {
+    const store = new EnterpriseStore();
+    const denied = store.executeIncidentContainmentAction(
+      "inc-801",
+      "act-isolate-fin09",
+      "test-executor",
+      "ws-prod-defense"
+    );
+    expect(denied.success).toBe(false);
+    expect(denied.message).toContain("approved");
+  });
+});
 
 describe("DataFactor Security Hardening Regression Suite", () => {
   describe("DEFECT REGRESSION: Hardcoded JWT Secret Elimination", () => {
@@ -52,6 +66,30 @@ describe("DataFactor Security Hardening Regression Suite", () => {
       expect(validateSafeUrl("http://127.0.0.1:9090").safe).toBe(false);
       expect(validateSafeUrl("http://localhost:5432").safe).toBe(false);
     });
+
+    it("should reject non-public IPv4 ranges and localhost aliases", () => {
+      const blocked = [
+        "http://10.1.2.3/",
+        "http://172.16.0.1/",
+        "http://192.168.1.1/",
+        "http://100.64.0.1/",
+        "http://192.0.2.10/",
+        "http://localhost./",
+        "http://service.local/",
+        "http://service.internal/",
+      ];
+      for (const url of blocked) expect(validateSafeUrl(url).safe, url).toBe(false);
+    });
+
+    it("should reject IPv6 literal targets by default and embedded URL credentials", () => {
+      expect(validateSafeUrl("http://[::1]/").safe).toBe(false);
+      expect(validateSafeUrl("http://user:password@example.com/").safe).toBe(false);
+    });
+
+    it("should allow ordinary public HTTPS hostnames and public IPv4 targets", () => {
+      expect(validateSafeUrl("https://example.com/security").safe).toBe(true);
+      expect(validateSafeUrl("https://8.8.8.8/").safe).toBe(true);
+    });
   });
 
   describe("DEFECT REGRESSION: Cross-Tenant Isolation Enforcement", () => {
@@ -78,6 +116,25 @@ describe("DataFactor Security Hardening Regression Suite", () => {
       const forgedToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiU1VQRVJfQURNSU4ifQ.forgedsignature";
       const result = verifyAuthToken(forgedToken);
       expect(result.valid).toBe(false);
+    });
+
+    it("should reject unsupported JWT algorithms", () => {
+      const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+      const body = Buffer.from(JSON.stringify({ role: "ADMIN" })).toString("base64url");
+      expect(verifyAuthToken(`${header}.${body}.unsigned`).valid).toBe(false);
+    });
+
+    it("should reject malformed JWT signature lengths without throwing", () => {
+      const token = signAuthToken({
+        userId: "test-user",
+        email: "test@example.com",
+        role: "L1_ANALYST",
+        organizationId: "org-test",
+        workspaceId: "ws-test",
+        permissions: [],
+      });
+      const [header, body] = token.split(".");
+      expect(verifyAuthToken(`${header}.${body}.x`).valid).toBe(false);
     });
   });
 

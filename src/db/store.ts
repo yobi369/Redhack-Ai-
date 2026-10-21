@@ -694,7 +694,7 @@ export const SEED_SPECIALIZED_AGENTS: SpecializedAgent[] = [
 // UNIFIED DATA STORE SINGLETON WITH FULL LIFECYCLE & SECURITY SCORING
 // ----------------------------------------------------------------------------
 
-class EnterpriseStore {
+export class EnterpriseStore {
   private organizations: Organization[] = [SEED_ORGANIZATION];
   private workspaces: Workspace[] = [...SEED_WORKSPACES];
   private roles: Role[] = [...SEED_ROLES];
@@ -983,7 +983,7 @@ class EnterpriseStore {
     return this.incidents.find((i) => i.id === id);
   }
 
-  public executeIncidentContainmentAction(
+  public approveIncidentContainmentAction(
     incidentId: string,
     actionId: string,
     approverName: string,
@@ -994,19 +994,55 @@ class EnterpriseStore {
 
     const act = inc.containmentActions.find((a) => a.id === actionId);
     if (!act) return { success: false, message: "Containment action not found" };
+    if (act.status !== "PENDING_APPROVAL") {
+      return { success: false, message: "Only actions awaiting approval can be approved" };
+    }
 
-    act.status = "EXECUTED";
-    act.executedBy = approverName;
-    act.executedAt = new Date().toISOString();
-
+    act.status = "APPROVED";
+    act.approvedBy = approverName;
+    act.approvedAt = new Date().toISOString();
     this.logAuditEvent(
       approverName,
       "USER",
       approverName,
-      "CONTAINMENT_ACTION_APPROVED_AND_EXECUTED",
+      "CONTAINMENT_ACTION_APPROVED",
       "INCIDENT",
       inc.id,
-      { action: act.action, target: act.target }
+      { action: act.action, target: act.target, actionId: act.id }
+    );
+
+    return { success: true, message: "Action approved; execution is a separate step", action: act };
+  }
+
+  public executeIncidentContainmentAction(
+    incidentId: string,
+    actionId: string,
+    executorName: string,
+    workspaceId = this.activeWorkspaceId
+  ): { success: boolean; message: string; action?: any } {
+    const inc = this.incidents.find((i) => i.id === incidentId && i.workspaceId === workspaceId);
+    if (!inc) return { success: false, message: "Incident not found" };
+
+    const act = inc.containmentActions.find((a) => a.id === actionId);
+    if (!act) return { success: false, message: "Containment action not found" };
+    if (act.status !== "APPROVED") {
+      return { success: false, message: "Action must be explicitly approved before execution" };
+    }
+    if (act.approvedBy && act.approvedBy === executorName) {
+      return { success: false, message: "A different operator must execute an approved action" };
+    }
+
+    act.status = "EXECUTED";
+    act.executedBy = executorName;
+    act.executedAt = new Date().toISOString();
+    this.logAuditEvent(
+      executorName,
+      "USER",
+      executorName,
+      "CONTAINMENT_ACTION_EXECUTED_AFTER_APPROVAL",
+      "INCIDENT",
+      inc.id,
+      { action: act.action, target: act.target, actionId: act.id, approvedBy: act.approvedBy }
     );
 
     return { success: true, message: `Successfully executed: ${act.action}`, action: act };
@@ -1023,6 +1059,12 @@ class EnterpriseStore {
 
     const act = inc.containmentActions.find((a) => a.id === actionId);
     if (!act) return { success: false, message: "Containment action not found" };
+    if (act.status !== "EXECUTED") {
+      return { success: false, message: "Only executed actions can be rolled back" };
+    }
+    if (!act.reversible) {
+      return { success: false, message: "This action is not marked reversible" };
+    }
 
     act.status = "ROLLED_BACK";
     act.executedBy = `${actorName} (Rollback)`;

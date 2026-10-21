@@ -707,16 +707,19 @@ app.get("/api/soar/approvals", (req, res) => {
 });
 
 // Human Approval Gate Submission
-app.post("/api/soar/approve", (req, res) => {
-  const { approvalId, approverName, role = "L2_INVESTIGATOR" } = req.body;
+app.post("/api/soar/approve", (req: any, res) => {
+  const { approvalId } = req.body;
+  const approverName = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const role = req.user?.role || "UNKNOWN_ROLE";
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
 
-  reqItem.status = "APPROVED_EXECUTED";
-  reqItem.approvedBy = approverName || "Senior Incident Commander";
-  reqItem.approvedAt = new Date().toLocaleTimeString() + " UTC";
-  reqItem.executedAt = new Date().toLocaleTimeString() + " UTC";
-  reqItem.executionOutput = `[SUCCESS] Containment policy applied: ${reqItem.actionType} on ${reqItem.targetResource}.`;
+  if (reqItem.status !== "PENDING_APPROVAL") {
+    return res.status(409).json({ error: "Only pending requests can be approved.", code: "INVALID_APPROVAL_STATE" });
+  }
+  reqItem.status = "APPROVED";
+  reqItem.approvedBy = approverName;
+  reqItem.approvedAt = new Date().toISOString();
 
   auditLogsStore.unshift({
     id: `AUDIT-${Date.now()}`,
@@ -726,17 +729,40 @@ app.post("/api/soar/approve", (req, res) => {
     action: "HIGH_CONSEQUENCE_ACTION_APPROVED",
     resource: reqItem.targetResource,
     status: "SUCCESS",
-    details: `Approved ${reqItem.actionTitle}. Command: ${reqItem.commandPreview}`,
+    details: `Approved ${reqItem.actionTitle}. Execution remains a separate step.`,
   });
 
   return res.json({ success: true, approval: reqItem });
 });
 
+// Execution is a separate step after an authorized human approval.
+app.post("/api/soar/execute", (req: any, res) => {
+  const { approvalId } = req.body;
+  const executor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const item = soarApprovalsStore.find((approval) => approval.id === approvalId);
+  if (!item) return res.status(404).json({ error: "Approval request not found." });
+  if (item.status !== "APPROVED") {
+    return res.status(409).json({ error: "Approval is required before execution.", code: "APPROVAL_REQUIRED" });
+  }
+  if (item.approvedBy === executor) {
+    return res.status(403).json({ error: "A different operator must execute the approved request.", code: "SEPARATION_OF_DUTIES_REQUIRED" });
+  }
+  item.status = "EXECUTED";
+  item.executedBy = executor;
+  item.executedAt = new Date().toISOString();
+  item.executionOutput = "Workflow execution state recorded; no external connector action is claimed by this endpoint.";
+  return res.json({ success: true, approval: item });
+});
+
 // Rollback Containment Action
-app.post("/api/soar/rollback", (req, res) => {
-  const { approvalId, actor = "Incident Responder" } = req.body;
+app.post("/api/soar/rollback", (req: any, res) => {
+  const { approvalId } = req.body;
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
+  if (reqItem.status !== "EXECUTED") {
+    return res.status(409).json({ error: "Only executed actions can be rolled back.", code: "INVALID_ROLLBACK_STATE" });
+  }
 
   reqItem.status = "ROLLED_BACK";
   reqItem.rolledBackAt = new Date().toLocaleTimeString() + " UTC";
@@ -1318,24 +1344,36 @@ app.get("/api/v2/incidents", (req: any, res) => {
   res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
-  const { approverName } = req.body;
-  const result = enterpriseStore.executeIncidentContainmentAction(
+app.post("/api/v2/incidents/:id/actions/:actionId/approve", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const result = enterpriseStore.approveIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    approverName || "Marcus Vance (CISO Desk)",
+    actor,
     requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
   res.json(result);
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req, res) => {
-  const { actorName } = req.body;
+app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const result = enterpriseStore.executeIncidentContainmentAction(
+    req.params.id,
+    req.params.actionId,
+    actor,
+    requestWorkspaceId(req)
+  );
+  if (!result.success) return res.status(400).json(result);
+  res.json(result);
+});
+
+app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const result = enterpriseStore.rollbackIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    actorName || "Elena Rostova (SOC Lead)",
+    actor,
     requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
