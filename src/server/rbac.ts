@@ -285,6 +285,7 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
     [/^\/simulation\/stop$/, PERMISSIONS.EMERGENCY_KILL_SWITCH],
     [/^\/detection\/validate-rule$/, PERMISSIONS.RUN_AGENT_SCOPED],
     [/^\/soar\/approve$/, PERMISSIONS.APPROVE_CONTAINMENT],
+    [/^\/soar\/execute$/, PERMISSIONS.EXECUTE_HOST_ISOLATION],
     [/^\/soar\/rollback$/, PERMISSIONS.EXECUTE_ROLLBACK],
     [/^\/(chat|analyze-log)$/, PERMISSIONS.RUN_AGENT_SCOPED],
     [/^\/generate-report$/, PERMISSIONS.GENERATE_REPORTS],
