@@ -1062,6 +1062,9 @@ export class EnterpriseStore {
     if (act.status !== "EXECUTED") {
       return { success: false, message: "Only executed actions can be rolled back" };
     }
+    if (!act.reversible) {
+      return { success: false, message: "This action is not marked reversible" };
+    }
 
     act.status = "ROLLED_BACK";
     act.executedBy = `${actorName} (Rollback)`;
