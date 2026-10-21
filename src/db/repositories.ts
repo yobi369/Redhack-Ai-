@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getPostgresPool, withPostgresTransaction } from "./postgres";
 import type { Asset, EvidenceItem, Finding, Incident } from "./models";
@@ -144,6 +144,16 @@ export async function createEvidence(input: Omit<EvidenceItem, "id" | "createdAt
   if (!input.title?.trim() || !input.sha256Hash || !/^[a-f0-9]{64}$/i.test(input.sha256Hash) || !input.collectedBy) {
     throw new Error("title, collectedBy and a valid SHA-256 hash are required");
   }
+  const actualHash = createHash("sha256").update(input.content, "utf8").digest("hex");
+  if (actualHash !== input.sha256Hash.toLowerCase()) {
+    throw new Error("Evidence SHA-256 does not match the stored content");
+  }
+  const custody = [{
+    timestamp: new Date().toISOString(),
+    actor: input.collectedBy,
+    action: "EVIDENCE_INGESTED",
+    verificationHash: actualHash,
+  }];
   return withPostgresTransaction(async (client: PoolClient) => {
     if (input.findingId) {
       const finding = await client.query("SELECT 1 FROM findings WHERE id = $1 AND workspace_id = $2", [input.findingId, workspaceId]);
@@ -159,7 +169,7 @@ export async function createEvidence(input: Omit<EvidenceItem, "id" | "createdAt
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) RETURNING *`,
       [randomUUID(), workspaceId, input.findingId ?? null, input.investigationId ?? null,
        input.title.trim(), input.evidenceType, input.sha256Hash.toLowerCase(),
-       JSON.stringify(input.chainOfCustody ?? []), input.content, input.collectedBy],
+       JSON.stringify(custody), input.content, input.collectedBy],
     );
     return mapEvidence(result.rows[0]);
   });
