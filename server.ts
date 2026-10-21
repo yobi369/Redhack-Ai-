@@ -1318,12 +1318,12 @@ app.get("/api/v2/incidents", (req: any, res) => {
   res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req, res) => {
-  const { approverName } = req.body;
+app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req: any, res) => {
+  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const result = enterpriseStore.executeIncidentContainmentAction(
     req.params.id,
     req.params.actionId,
-    approverName || "Marcus Vance (CISO Desk)",
+    actor,
     requestWorkspaceId(req)
   );
   if (!result.success) return res.status(400).json(result);
