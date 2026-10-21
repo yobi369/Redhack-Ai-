@@ -10,6 +10,20 @@ import { validateEnvironment } from "../../src/server/config";
 import { hasPermission, PERMISSIONS } from "../../src/server/rbac";
 import { EnterpriseStore, enterpriseStore } from "../../src/db/store";
 
+describe("Incident action approval state", () => {
+  it("blocks execution until the action has been approved", () => {
+    const store = new EnterpriseStore();
+    const denied = store.executeIncidentContainmentAction(
+      "inc-801",
+      "act-isolate-fin09",
+      "test-executor",
+      "ws-prod-defense"
+    );
+    expect(denied.success).toBe(false);
+    expect(denied.message).toContain("approved");
+  });
+});
+
 describe("DataFactor Security Hardening Regression Suite", () => {
   describe("DEFECT REGRESSION: Hardcoded JWT Secret Elimination", () => {
     it("should never use the legacy hardcoded fallback secret 'redhack-production-enterprise-secret-salt-2026'", () => {
