@@ -119,7 +119,10 @@ export function verifyAuthToken(token: string): { valid: boolean; payload?: Auth
     }
 
     const secret = getJwtSecret();
-    const expectedSignature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(`${header}.${body}`)
+      .digest("base64url");
     const actualSignatureBytes = Buffer.from(signature);
     const expectedSignatureBytes = Buffer.from(expectedSignature);
 
@@ -224,7 +227,10 @@ export function validateSafeUrl(
       hostname.endsWith(".internal")
     ) {
       if (!explicitAllow) {
-        return { safe: false, reason: "Local or internal hostnames are blocked by SSRF preflight." };
+        return {
+          safe: false,
+          reason: "Local or internal hostnames are blocked by SSRF preflight.",
+        };
       }
     }
 
@@ -233,7 +239,10 @@ export function validateSafeUrl(
       // Fail closed for IPv6 literals until the network-fetch layer has a
       // vetted, tested global-unicast classifier and address pinning.
       if (!explicitAllow) {
-        return { safe: false, reason: "IPv6 literal targets require an explicit trusted-host allowlist." };
+        return {
+          safe: false,
+          reason: "IPv6 literal targets require an explicit trusted-host allowlist.",
+        };
       }
     }
 
@@ -255,9 +264,15 @@ export function validateSafeUrl(
         a === 255;
       if (blocked && !explicitAllow) {
         if (a === 169 && b === 254) {
-          return { safe: false, reason: "cloud instance metadata and link-local IPv4 targets are blocked." };
+          return {
+            safe: false,
+            reason: "cloud instance metadata and link-local IPv4 targets are blocked.",
+          };
         }
-        return { safe: false, reason: "Non-public, special-use, or internal IPv4 targets are blocked." };
+        return {
+          safe: false,
+          reason: "Non-public, special-use, or internal IPv4 targets are blocked.",
+        };
       }
     }
 
