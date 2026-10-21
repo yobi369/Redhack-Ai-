@@ -35,23 +35,23 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
 
     await pool.query(
       "INSERT INTO organizations (id, name, slug, plan) VALUES ($1, 'Integration Test Org', $2, 'test')",
-      [organizationId, `it-${suffix}`],
+      [organizationId, `it-${suffix}`]
     );
     await pool.query(
       "INSERT INTO workspaces (id, organization_id, name, environment) VALUES ($1, $2, 'Workspace A', 'lab'), ($3, $2, 'Workspace B', 'lab')",
-      [workspaceA, organizationId, workspaceB],
+      [workspaceA, organizationId, workspaceB]
     );
     await pool.query(
       "INSERT INTO roles (id, name, description, is_system_role) VALUES ($1, $2, 'Integration test role', FALSE)",
-      [roleId, `Integration ${suffix}`],
+      [roleId, `Integration ${suffix}`]
     );
     await pool.query(
       "INSERT INTO users (id, email, full_name, role_id, default_organization_id, default_workspace_id, is_active) VALUES ($1, $2, 'User A', $3, $4, $5, TRUE), ($6, $7, 'User B', $3, $4, $5, TRUE)",
-      [userA, `${userA}@example.test`, roleId, organizationId, workspaceA, userB, `${userB}@example.test`],
+      [userA, `${userA}@example.test`, roleId, organizationId, workspaceA, userB, `${userB}@example.test`]
     );
     await pool.query(
       "INSERT INTO user_workspace_memberships (user_id, workspace_id, role_id) VALUES ($1, $2, $3), ($4, $2, $3), ($4, $5, $3)",
-      [userA, workspaceA, roleId, userB, workspaceB],
+      [userA, workspaceA, roleId, userB, workspaceB]
     );
     await pool.query(
       `INSERT INTO incidents (id, workspace_id, title, severity, status, containment_actions)
@@ -68,7 +68,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
             reversible: true,
           },
         ]),
-      ],
+      ]
     );
   });
 
@@ -90,7 +90,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     await expect(assertWorkspaceMembership(userA, organizationId, workspaceA)).resolves.toBe(true);
     await expect(assertWorkspaceMembership(userA, organizationId, workspaceB)).resolves.toBe(false);
     await expect(
-      assertWorkspaceMembership(userA, `wrong-${organizationId}`, workspaceA),
+      assertWorkspaceMembership(userA, `wrong-${organizationId}`, workspaceA)
     ).resolves.toBe(false);
   });
 
@@ -106,7 +106,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
         isInTestingScope: false,
         securityScore: 80,
       },
-      workspaceA,
+      workspaceA
     );
     createdAssetId = created.id;
 
@@ -125,7 +125,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
         content: "synthetic integration fixture",
         collectedBy: userA,
       },
-      workspaceA,
+      workspaceA
     );
     expect(evidence.workspaceId).toBe(workspaceA);
     expect(evidence.sha256Hash).toBe("a".repeat(64));
@@ -134,28 +134,26 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
   });
 
   it("persists approval, execution, and rollback atomically with different operators", async () => {
-    await expect(
-      approveIncidentAction(incidentId, "action-1", workspaceA, userA),
-    ).resolves.toMatchObject({ success: true });
-    await expect(
-      executeIncidentAction(incidentId, "action-1", workspaceA, userA),
-    ).resolves.toMatchObject({ success: false });
-    await expect(
-      executeIncidentAction(incidentId, "action-1", workspaceA, userB),
-    ).resolves.toMatchObject({ success: true });
+    await expect(approveIncidentAction(incidentId, "action-1", workspaceA, userA)).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(executeIncidentAction(incidentId, "action-1", workspaceA, userA)).resolves.toMatchObject({
+      success: false,
+    });
+    await expect(executeIncidentAction(incidentId, "action-1", workspaceA, userB)).resolves.toMatchObject({
+      success: true,
+    });
     await expect(listIncidents(workspaceA)).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: incidentId,
-          containmentActions: expect.arrayContaining([
-            expect.objectContaining({ id: "action-1", status: "EXECUTED" }),
-          ]),
+          containmentActions: expect.arrayContaining([expect.objectContaining({ id: "action-1", status: "EXECUTED" })]),
         }),
-      ]),
+      ])
     );
-    await expect(
-      rollbackIncidentAction(incidentId, "action-1", workspaceA, userA),
-    ).resolves.toMatchObject({ success: true });
+    await expect(rollbackIncidentAction(incidentId, "action-1", workspaceA, userA)).resolves.toMatchObject({
+      success: true,
+    });
     await expect(listIncidents(workspaceB)).resolves.toEqual([]);
   });
 });
