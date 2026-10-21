@@ -168,14 +168,18 @@ export function validateSafeUrl(
       return { safe: false, reason: "URLs containing embedded credentials are not permitted." };
     }
 
-    // Normalize DNS absolute names and IPv6 URL bracket notation before checks.
-    const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, "");
-    const hostForIpCheck = hostname.startsWith("[") && hostname.endsWith("]")
-      ? hostname.slice(1, -1)
-      : hostname;
-    const explicitAllow = allowedInternalHosts.some(
-      (host) => host.toLowerCase().replace(/\\.$/, "").replace(/^\\[|\\]$/g, "") === hostForIpCheck
-    );
+    // Normalize absolute DNS names and IPv6 URL bracket notation before checks.
+    const normalizeHost = (value: string): string => {
+      let normalized = value.toLowerCase();
+      if (normalized.endsWith(".")) normalized = normalized.slice(0, -1);
+      if (normalized.startsWith("[") && normalized.endsWith("]")) {
+        normalized = normalized.slice(1, -1);
+      }
+      return normalized;
+    };
+    const hostname = normalizeHost(parsed.hostname);
+    const hostForIpCheck = hostname;
+    const explicitAllow = allowedInternalHosts.some((host) => normalizeHost(host) === hostForIpCheck);
 
     if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") ||
         hostname.endsWith(".local") || hostname.endsWith(".internal")) {
