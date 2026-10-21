@@ -114,7 +114,7 @@ The provisioning command refuses to overwrite an existing account. Production au
 
 ## 4. Automated Testing & Coverage Architecture
 
-RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Test counts are taken from the CI run rather than a hard-coded badge.
+RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Treat the latest successful workflow run as the source of truth for pass/fail counts; this document is not a live test report.
 
 | Test Layer | Framework / Runner | Test Count | Status |
 | :--- | :--- | :---: | :---: |
@@ -123,9 +123,11 @@ RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests a
 | **Security Regression Suite (SSRF, Defect Gates)** | Vitest (v8) | 8 | **PASS** |
 | **Platform Verification Suite (CVSS, STIX, Scope)** | Node TSX Runner | 34 | **PASS** |
 | **Production Hardening Verification Suite** | Node TSX Runner | 22 | **PASS** |
-| **TOTAL VERIFIED PLATFORM TESTS** | | **109** | **100% PASS** |
+| **TOTAL PLATFORM TESTS** | | Run `npm test` | See current CI result |
 
 ### Running Tests
+Test counts and coverage are intentionally not treated as static guarantees. Run the commands below against the exact commit being evaluated and retain the CI result as evidence.
+
 ```bash
 # Run Vitest test suite with V8 code coverage threshold enforcement
 npm run test:coverage
@@ -137,18 +139,15 @@ npm run test:legacy
 npm test
 ```
 
-### Measured Code Coverage
-- **Lines:** 71.47% (Threshold: 60%)
-- **Statements:** 70.84% (Threshold: 60%)
-- **Branches:** 57.08% (Threshold: 50%)
-- **Functions:** 53.44% (Threshold: 50%)
+### Coverage policy
+The configured minimums are 60% lines, 60% statements, 50% branches, and 50% functions for the files included by `vitest.config.ts`. Coverage values change with each commit; consult the current CI artifact/output before quoting a measured percentage.
 
 ---
 
 ## 5. Continuous Integration & Tooling
 
 Continuous integration is enforced via **GitHub Actions** (`.github/workflows/ci.yml`):
-- **Matrix Testing:** Verified on Ubuntu with Node.js `20.x` and `22.x`.
+- **Runtime:** CI currently targets Node.js `22.x` on Ubuntu; the supported runtime is Node.js `^22.12.0` or newer.
 - **Steps:** `npm ci` $\to$ `npm run format:check` $\to$ `npm run lint` $\to$ `npx tsc --noEmit` $\to$ `npm run test:coverage` $\to$ `npm run build` $\to$ `npm audit` $\to$ Docker container build.
 - **Automated Dependency Updates:** Managed via `.github/dependabot.yml`.
 - **Linting & Code Style:** Enforced with `eslint.config.js` and `.prettierrc`.
