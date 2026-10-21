@@ -18,7 +18,7 @@
 1. [Architectural Highlights](#1-architectural-highlights)
 2. [Multi-Agent Swarm (9 Specialized Agents)](#2-multi-agent-swarm-9-specialized-agents)
 3. [Verified Installation & Clean Setup](#3-verified-installation--clean-setup)
-4. [Testing & Coverage Architecture (109 Tests)](#4-testing--coverage-architecture-109-tests)
+4. [Testing & Coverage Architecture](#4-testing--coverage-architecture)
 5. [Continuous Integration & Tooling](#5-continuous-integration--tooling)
 6. [API Endpoints & Health Probes](#6-api-endpoints--health-probes)
 7. [Environment Variables Reference](#7-environment-variables-reference)
@@ -123,6 +123,7 @@ RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests a
 | **Platform regression checks** | Node TSX runner | See the candidate commit's CI output |
 | **Production hardening checks** | Node TSX runner | See the candidate commit's CI output |
 | **Overall verification** | `npm test` | A passing result must be confirmed for the exact commit being evaluated |
+
 ### Running Tests
 Test counts and coverage are intentionally not treated as static guarantees. Run the commands below against the exact commit being evaluated and retain the CI result as evidence.
 
@@ -133,7 +134,7 @@ npm run test:coverage
 # Run legacy platform verification suites
 npm run test:legacy
 
-# Run complete test suite (109 tests)
+# Run complete test suite
 npm test
 ```
 
