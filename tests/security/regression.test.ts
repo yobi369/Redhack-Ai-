@@ -103,6 +103,25 @@ describe("DataFactor Security Hardening Regression Suite", () => {
       const result = verifyAuthToken(forgedToken);
       expect(result.valid).toBe(false);
     });
+
+    it("should reject unsupported JWT algorithms", () => {
+      const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+      const body = Buffer.from(JSON.stringify({ role: "ADMIN" })).toString("base64url");
+      expect(verifyAuthToken(`${header}.${body}.unsigned`).valid).toBe(false);
+    });
+
+    it("should reject malformed JWT signature lengths without throwing", () => {
+      const token = signAuthToken({
+        userId: "test-user",
+        email: "test@example.com",
+        role: "L1_ANALYST",
+        organizationId: "org-test",
+        workspaceId: "ws-test",
+        permissions: [],
+      });
+      const [header, body] = token.split(".");
+      expect(verifyAuthToken(`${header}.${body}.x`).valid).toBe(false);
+    });
   });
 
   describe("DEFECT REGRESSION: Prompt Injection Gateway", () => {
