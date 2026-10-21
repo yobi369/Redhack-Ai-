@@ -89,9 +89,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
   it("requires active database membership in the requested organization and workspace", async () => {
     await expect(assertWorkspaceMembership(userA, organizationId, workspaceA)).resolves.toBe(true);
     await expect(assertWorkspaceMembership(userA, organizationId, workspaceB)).resolves.toBe(false);
-    await expect(
-      assertWorkspaceMembership(userA, `wrong-${organizationId}`, workspaceA)
-    ).resolves.toBe(false);
+    await expect(assertWorkspaceMembership(userA, `wrong-${organizationId}`, workspaceA)).resolves.toBe(false);
   });
 
   it("persists assets and never returns another workspace's records", async () => {
