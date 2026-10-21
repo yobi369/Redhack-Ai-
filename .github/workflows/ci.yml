@@ -18,6 +18,20 @@ jobs:
   quality:
     name: Quality gate (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: redhack
+          POSTGRES_PASSWORD: redhack-ci-password
+          POSTGRES_DB: redhack_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U redhack -d redhack_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +65,8 @@ jobs:
         run: npm run lint
 
       - name: Run unit and integration tests with coverage thresholds
+        env:
+          DATABASE_URL: postgresql://redhack:redhack-ci-password@127.0.0.1:5432/redhack_ci
         run: npm run test:coverage
 
       - name: Run legacy regression suites
