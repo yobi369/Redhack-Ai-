@@ -16,6 +16,12 @@ RedHack AI is a security-operations and validation workbench. It must distinguis
 
 `validateSafeUrl` rejects non-HTTP(S) schemes, embedded URL credentials, local/internal hostnames, non-public/special-use IPv4 literals, and IPv6 literal targets unless explicitly allowlisted. This is a conservative preflight check, not a complete SSRF defense. Domain names can resolve to internal addresses, DNS can change between validation and connection, and redirects can cross trust boundaries. Any code that performs network I/O must enforce the network-boundary requirements above. Allowlisting a hostname is not a substitute for validating the resolved destination.
 
+## Consequential-action approval state
+
+The incident action API enforces distinct states: `PENDING_APPROVAL → APPROVED → EXECUTED → ROLLED_BACK`. The approval and execution endpoints use separate server-side permission rules, audit identity comes from the authenticated session rather than caller-supplied display names, and the same identity cannot approve and execute the same action. Execution is rejected unless approval is recorded; rollback is rejected unless the action is recorded as executed.
+
+The legacy SOAR demo endpoint records workflow state only. It does not prove that a real EDR, firewall, or cloud connector performed the external action. The current store is in-memory, so these decisions are not durable across process restarts; production deployment requires persistent storage, transaction-safe state transitions, immutable or tamper-evident audit retention, and connector-specific execution evidence.
+
 ## Evidence-to-remediation verification loop
 
 Use this workflow for security findings:
