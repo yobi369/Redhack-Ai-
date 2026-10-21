@@ -255,7 +255,7 @@ export function validateSafeUrl(
         a === 255;
       if (blocked && !explicitAllow) {
         if (a === 169 && b === 254) {
-          return { safe: false, reason: "Cloud instance metadata and link-local IPv4 targets are blocked." };
+          return { safe: false, reason: "cloud instance metadata and link-local IPv4 targets are blocked." };
         }
         return { safe: false, reason: "Non-public, special-use, or internal IPv4 targets are blocked." };
       }
