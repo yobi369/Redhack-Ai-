@@ -225,3 +225,76 @@ export const executeIncidentAction = (incidentId: string, actionId: string, work
   updateIncidentAction(incidentId, actionId, workspaceId, "execute", actor);
 export const rollbackIncidentAction = (incidentId: string, actionId: string, workspaceId: string, actor: string) =>
   updateIncidentAction(incidentId, actionId, workspaceId, "rollback", actor);
+
+export async function transitionFinding(
+  findingId: string,
+  newStatus: Finding["lifecycleStatus"],
+  workspaceId: string,
+  actorId: string,
+  notes: string,
+): Promise<Finding | null> {
+  const allowedStatuses: Finding["lifecycleStatus"][] = [
+    "DISCOVERED", "TRIAGED", "VALIDATING", "CONFIRMED", "DISMISSED",
+    "REMEDIATION", "RETEST", "RESOLVED",
+  ];
+  if (!allowedStatuses.includes(newStatus)) {
+    throw new Error("Unsupported finding lifecycle status");
+  }
+  return withPostgresTransaction(async (client: PoolClient) => {
+    const selected = await client.query(
+      "SELECT * FROM findings WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+      [findingId, workspaceId],
+    );
+    if (!selected.rowCount) return null;
+
+    const previous = selected.rows[0];
+    const auditTrail = Array.isArray(previous.audit_trail) ? previous.audit_trail : [];
+    const timestamp = new Date().toISOString();
+    auditTrail.push({
+      timestamp,
+      actor: actorId,
+      previousStatus: previous.lifecycle_status,
+      newStatus,
+      notes,
+    });
+
+    const updated = await client.query(
+      `UPDATE findings
+          SET lifecycle_status = $1,
+              remediation_status = CASE
+                WHEN $1 = 'RESOLVED' THEN 'VERIFIED_FIXED'
+                WHEN $1 = 'REMEDIATION' THEN 'IN_PROGRESS'
+                ELSE remediation_status
+              END,
+              validation_status = CASE
+                WHEN $1 = 'CONFIRMED' THEN 'EXPLOITABILITY_CONFIRMED'
+                WHEN $1 = 'DISMISSED' THEN 'DISMISSED_OUT_OF_SCOPE'
+                ELSE validation_status
+              END,
+              verified_at = CASE WHEN $1 = 'CONFIRMED' THEN NOW() ELSE verified_at END,
+              resolved_at = CASE WHEN $1 = 'RESOLVED' THEN NOW() ELSE resolved_at END,
+              audit_trail = $2::jsonb,
+              updated_at = NOW()
+        WHERE id = $3 AND workspace_id = $4
+        RETURNING *`,
+      [newStatus, JSON.stringify(auditTrail), findingId, workspaceId],
+    );
+
+    await client.query(
+      `INSERT INTO audit_events (id, workspace_id, actor_id, actor_type, actor_name, action, target_type, target_id, details)
+       VALUES ($1,$2,$3,'USER',$3,$4,'FINDING',$5,$6::jsonb)`,
+      [randomUUID(), workspaceId, actorId, `FINDING_TRANSITION_${newStatus}`, findingId,
+       JSON.stringify({ previousStatus: previous.lifecycle_status, newStatus, notes })],
+    );
+
+    const hydrated = await client.query(
+      `SELECT f.*, v.cve_id, a.name AS asset_name, a.exposure AS asset_exposure
+         FROM findings f
+         LEFT JOIN vulnerabilities v ON v.id = f.vulnerability_id
+         LEFT JOIN assets a ON a.id = f.asset_id AND a.workspace_id = f.workspace_id
+        WHERE f.id = $1 AND f.workspace_id = $2`,
+      [findingId, workspaceId],
+    );
+    return mapFinding(hydrated.rows[0] ?? updated.rows[0]);
+  });
+}
