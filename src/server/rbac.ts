@@ -294,6 +294,7 @@ export function authorizeApiRequest(req: AuthenticatedRequest, res: Response, ne
     [/^\/v2\/scope\/policy$/, PERMISSIONS.MODIFY_ROE_SCOPE],
     [/^\/v2\/assets$/, PERMISSIONS.MANAGE_WORKSPACES],
     [/^\/v2\/findings\/[^/]+\/transition$/, PERMISSIONS.TRANSITION_FINDING],
+    [/^\/v2\/incidents\/[^/]+\/actions\/[^/]+\/approve$/, PERMISSIONS.APPROVE_CONTAINMENT],
     [/^\/v2\/incidents\/[^/]+\/actions\/[^/]+\/execute$/, PERMISSIONS.EXECUTE_HOST_ISOLATION],
     [/^\/v2\/incidents\/[^/]+\/actions\/[^/]+\/rollback$/, PERMISSIONS.EXECUTE_ROLLBACK],
     [/^\/v2\/agents\/run$/, PERMISSIONS.RUN_AGENT_SCOPED],
