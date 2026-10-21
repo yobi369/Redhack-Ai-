@@ -760,6 +760,9 @@ app.post("/api/soar/rollback", (req: any, res) => {
   const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
   const reqItem = soarApprovalsStore.find((a) => a.id === approvalId);
   if (!reqItem) return res.status(404).json({ error: "Approval request not found." });
+  if (reqItem.status !== "EXECUTED") {
+    return res.status(409).json({ error: "Only executed actions can be rolled back.", code: "INVALID_ROLLBACK_STATE" });
+  }
 
   reqItem.status = "ROLLED_BACK";
   reqItem.rolledBackAt = new Date().toLocaleTimeString() + " UTC";
