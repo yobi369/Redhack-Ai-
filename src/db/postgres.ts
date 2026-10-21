@@ -184,12 +184,40 @@ export async function runDatabaseMigrations(): Promise<{ success: boolean; appli
         appliedCount += 1;
       }
 
+      const tenantDataMigration = await client.query(
+        "SELECT version FROM schema_migrations WHERE version = '003_tenant_scoped_domain_data'"
+      );
+      if (tenantDataMigration.rows.length === 0) {
+        console.log("[MIGRATIONS] Applying migration 003_tenant_scoped_domain_data...");
+        await client.query("BEGIN");
+        try {
+          await client.query(`
+            ALTER TABLE findings ADD COLUMN IF NOT EXISTS evidence TEXT NOT NULL DEFAULT '';
+            ALTER TABLE findings ADD COLUMN IF NOT EXISTS asset_name VARCHAR(255);
+            ALTER TABLE findings ADD COLUMN IF NOT EXISTS asset_exposure VARCHAR(50);
+            ALTER TABLE findings ADD COLUMN IF NOT EXISTS audit_trail JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE incidents ADD COLUMN IF NOT EXISTS related_alert_ids TEXT[] NOT NULL DEFAULT '{}';
+            ALTER TABLE incidents ADD COLUMN IF NOT EXISTS affected_asset_ids TEXT[] NOT NULL DEFAULT '{}';
+            CREATE INDEX IF NOT EXISTS idx_findings_workspace_created ON findings(workspace_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_incidents_workspace_created ON incidents(workspace_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_evidence_workspace_created ON evidence(workspace_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_memberships_workspace_user ON user_workspace_memberships(workspace_id, user_id);
+          `);
+          await client.query("INSERT INTO schema_migrations (version) VALUES ('003_tenant_scoped_domain_data')");
+          await client.query("COMMIT");
+          appliedCount += 1;
+        } catch (migrationError) {
+          await client.query("ROLLBACK");
+          throw migrationError;
+        }
+      }
+
       return {
         success: true,
         appliedCount,
         message: appliedCount > 0
           ? `Applied ${appliedCount} database migration(s) successfully.`
-          : "Database schema is up to date (002_user_password_credentials already applied).",
+          : "Database schema is up to date (003_tenant_scoped_domain_data already applied).",
       };
     } finally {
       client.release();
