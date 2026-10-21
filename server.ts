@@ -735,6 +735,25 @@ app.post("/api/soar/approve", (req: any, res) => {
   return res.json({ success: true, approval: reqItem });
 });
 
+// Execution is a separate step after an authorized human approval.
+app.post("/api/soar/execute", (req: any, res) => {
+  const { approvalId } = req.body;
+  const executor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
+  const item = soarApprovalsStore.find((approval) => approval.id === approvalId);
+  if (!item) return res.status(404).json({ error: "Approval request not found." });
+  if (item.status !== "APPROVED") {
+    return res.status(409).json({ error: "Approval is required before execution.", code: "APPROVAL_REQUIRED" });
+  }
+  if (item.approvedBy === executor) {
+    return res.status(403).json({ error: "A different operator must execute the approved request.", code: "SEPARATION_OF_DUTIES_REQUIRED" });
+  }
+  item.status = "EXECUTED";
+  item.executedBy = executor;
+  item.executedAt = new Date().toISOString();
+  item.executionOutput = "Workflow execution state recorded; no external connector action is claimed by this endpoint.";
+  return res.json({ success: true, approval: item });
+});
+
 // Rollback Containment Action
 app.post("/api/soar/rollback", (req: any, res) => {
   const { approvalId } = req.body;
