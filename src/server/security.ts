@@ -119,10 +119,7 @@ export function verifyAuthToken(token: string): { valid: boolean; payload?: Auth
     }
 
     const secret = getJwtSecret();
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(`${header}.${body}`)
-      .digest("base64url");
+    const expectedSignature = crypto.createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
     const actualSignatureBytes = Buffer.from(signature);
     const expectedSignatureBytes = Buffer.from(expectedSignature);
 
@@ -215,9 +212,7 @@ export function validateSafeUrl(
     };
     const hostname = normalizeHost(parsed.hostname);
     const hostForIpCheck = hostname;
-    const explicitAllow = allowedInternalHosts.some(
-      (host) => normalizeHost(host) === hostForIpCheck,
-    );
+    const explicitAllow = allowedInternalHosts.some((host) => normalizeHost(host) === hostForIpCheck);
 
     if (
       !hostname ||
