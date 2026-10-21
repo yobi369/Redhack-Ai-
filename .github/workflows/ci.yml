@@ -49,13 +49,6 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: TEMP formatting diagnostic
-        run: |
-          npx prettier --write tests/db/repositories.integration.test.ts
-          echo FORMAT_DIAGNOSTIC_BEGIN
-          cat tests/db/repositories.integration.test.ts
-          echo FORMAT_DIAGNOSTIC_END
-
       - name: Check formatting (backend, security modules, and tests)
         run: npm run format:check
 
