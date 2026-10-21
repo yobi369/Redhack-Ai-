@@ -13,6 +13,7 @@ import {
 } from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
 import { checkDatabaseHealth, getPostgresPool, runDatabaseMigrations } from "./src/db/postgres";
+import { assertWorkspaceMembership, listAssets, createAsset, listFindings, listIncidents, listEvidence, createEvidence, approveIncidentAction, executeIncidentAction, rollbackIncidentAction } from "./src/db/repositories";
 import { connectorRegistry } from "./src/server/integrations";
 import { productionAgentRunner } from "./src/server/agentRunner";
 
@@ -65,6 +66,24 @@ app.use("/api", generalRateLimiter.middleware(150, 60000));
 
 // Attach Auth & Tenant Context, then enforce an explicit permission policy on API operations.
 app.use("/api", authenticate as any);
+// When PostgreSQL is enabled, verify the signed identity's active membership in the selected workspace.
+app.use("/api", async (req: any, res, next) => {
+  if (!process.env.DATABASE_URL || !req.user) return next();
+  try {
+    const allowed = await assertWorkspaceMembership(
+      req.user.userId,
+      req.user.organizationId,
+      req.user.workspaceId,
+    );
+    if (!allowed) {
+      return res.status(403).json({ error: "Workspace membership is required", code: "WORKSPACE_MEMBERSHIP_REQUIRED" });
+    }
+    return next();
+  } catch (error) {
+    logger.error({ error }, "Workspace membership verification failed");
+    return res.status(503).json({ error: "Workspace authorization service unavailable", code: "WORKSPACE_AUTH_UNAVAILABLE" });
+  }
+});
 // Reject caller-supplied workspace identifiers that do not match the signed session context.
 // The workspace-switch route remains guarded by its own SUPER_ADMIN and membership checks.
 app.use("/api", enforceTenantIsolation as any);
@@ -1302,18 +1321,35 @@ app.put("/api/v2/scope/policy", (req: any, res) => {
 });
 
 // Asset Inventory
-app.get("/api/v2/assets", (req: any, res) => {
-  res.json(enterpriseStore.getAssets(requestWorkspaceId(req)));
+app.get("/api/v2/assets", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    res.json(process.env.DATABASE_URL ? await listAssets(workspaceId) : enterpriseStore.getAssets(workspaceId));
+  } catch (error: any) {
+    res.status(500).json({ error: "Unable to load assets", code: "ASSET_READ_FAILED" });
+  }
 });
 
-app.post("/api/v2/assets", (req: any, res) => {
-  const asset = enterpriseStore.createAsset(req.body, requestWorkspaceId(req));
-  res.status(201).json(asset);
+app.post("/api/v2/assets", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    const asset = process.env.DATABASE_URL
+      ? await createAsset(req.body, workspaceId)
+      : enterpriseStore.createAsset(req.body, workspaceId);
+    res.status(201).json(asset);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Unable to create asset", code: "ASSET_CREATE_FAILED" });
+  }
 });
 
 // Unified Finding Lifecycle
-app.get("/api/v2/findings", (req: any, res) => {
-  res.json(enterpriseStore.getFindings(requestWorkspaceId(req)));
+app.get("/api/v2/findings", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    res.json(process.env.DATABASE_URL ? await listFindings(workspaceId) : enterpriseStore.getFindings(workspaceId));
+  } catch {
+    res.status(500).json({ error: "Unable to load findings", code: "FINDING_READ_FAILED" });
+  }
 });
 
 app.post("/api/v2/findings/:id/transition", (req, res) => {
@@ -1340,44 +1376,55 @@ app.get("/api/v2/alerts", (req: any, res) => {
   res.json(enterpriseStore.getAlerts(requestWorkspaceId(req)));
 });
 
-app.get("/api/v2/incidents", (req: any, res) => {
-  res.json(enterpriseStore.getIncidents(requestWorkspaceId(req)));
+app.get("/api/v2/incidents", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    res.json(process.env.DATABASE_URL ? await listIncidents(workspaceId) : enterpriseStore.getIncidents(workspaceId));
+  } catch {
+    res.status(500).json({ error: "Unable to load incidents", code: "INCIDENT_READ_FAILED" });
+  }
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/approve", (req: any, res) => {
-  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
-  const result = enterpriseStore.approveIncidentContainmentAction(
-    req.params.id,
-    req.params.actionId,
-    actor,
-    requestWorkspaceId(req)
-  );
-  if (!result.success) return res.status(400).json(result);
-  res.json(result);
+app.post("/api/v2/incidents/:id/actions/:actionId/approve", async (req: any, res) => {
+  const actor = req.user?.userId;
+  if (!actor) return res.status(401).json({ error: "Authenticated actor required" });
+  try {
+    const result = process.env.DATABASE_URL
+      ? await approveIncidentAction(req.params.id, req.params.actionId, requestWorkspaceId(req), actor)
+      : enterpriseStore.approveIncidentContainmentAction(req.params.id, req.params.actionId, req.user?.email || actor, requestWorkspaceId(req));
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Unable to record incident approval", code: "INCIDENT_APPROVAL_FAILED" });
+  }
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/execute", (req: any, res) => {
-  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
-  const result = enterpriseStore.executeIncidentContainmentAction(
-    req.params.id,
-    req.params.actionId,
-    actor,
-    requestWorkspaceId(req)
-  );
-  if (!result.success) return res.status(400).json(result);
-  res.json(result);
+app.post("/api/v2/incidents/:id/actions/:actionId/execute", async (req: any, res) => {
+  const actor = req.user?.userId;
+  if (!actor) return res.status(401).json({ error: "Authenticated actor required" });
+  try {
+    const result = process.env.DATABASE_URL
+      ? await executeIncidentAction(req.params.id, req.params.actionId, requestWorkspaceId(req), actor)
+      : enterpriseStore.executeIncidentContainmentAction(req.params.id, req.params.actionId, req.user?.email || actor, requestWorkspaceId(req));
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Unable to record incident execution", code: "INCIDENT_EXECUTION_FAILED" });
+  }
 });
 
-app.post("/api/v2/incidents/:id/actions/:actionId/rollback", (req: any, res) => {
-  const actor = req.user?.email || req.user?.userId || "unknown-authenticated-actor";
-  const result = enterpriseStore.rollbackIncidentContainmentAction(
-    req.params.id,
-    req.params.actionId,
-    actor,
-    requestWorkspaceId(req)
-  );
-  if (!result.success) return res.status(400).json(result);
-  res.json(result);
+app.post("/api/v2/incidents/:id/actions/:actionId/rollback", async (req: any, res) => {
+  const actor = req.user?.userId;
+  if (!actor) return res.status(401).json({ error: "Authenticated actor required" });
+  try {
+    const result = process.env.DATABASE_URL
+      ? await rollbackIncidentAction(req.params.id, req.params.actionId, requestWorkspaceId(req), actor)
+      : enterpriseStore.rollbackIncidentContainmentAction(req.params.id, req.params.actionId, req.user?.email || actor, requestWorkspaceId(req));
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Unable to record incident rollback", code: "INCIDENT_ROLLBACK_FAILED" });
+  }
 });
 
 // Multi-Agent Architecture
@@ -1413,13 +1460,25 @@ app.post("/api/v2/agents/run", aiExecutionRateLimiter.middleware(30, 60000), asy
 });
 
 // Evidence Center
-app.get("/api/v2/evidence", (req: any, res) => {
-  res.json(enterpriseStore.getEvidence(requestWorkspaceId(req)));
+app.get("/api/v2/evidence", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    res.json(process.env.DATABASE_URL ? await listEvidence(workspaceId) : enterpriseStore.getEvidence(workspaceId));
+  } catch {
+    res.status(500).json({ error: "Unable to load evidence", code: "EVIDENCE_READ_FAILED" });
+  }
 });
 
-app.post("/api/v2/evidence", (req: any, res) => {
-  const item = enterpriseStore.addEvidence(req.body, requestWorkspaceId(req));
-  res.status(201).json(item);
+app.post("/api/v2/evidence", async (req: any, res) => {
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    const item = process.env.DATABASE_URL
+      ? await createEvidence(req.body, workspaceId)
+      : enterpriseStore.addEvidence(req.body, workspaceId);
+    res.status(201).json(item);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Unable to store evidence", code: "EVIDENCE_CREATE_FAILED" });
+  }
 });
 
 // Reports & Audit Logs
