@@ -62,6 +62,13 @@ async function main(): Promise<void> {
       throw new Error("A user with this email already exists; no credentials were changed.");
     }
 
+    await client.query(
+      `INSERT INTO user_workspace_memberships (user_id, workspace_id, role_id)
+       VALUES ($1, 'ws-prod-defense', 'role-admin')
+       ON CONFLICT (user_id, workspace_id) DO NOTHING`,
+      [userId],
+    );
+
     await client.query("COMMIT");
     process.stdout.write(`Provisioned administrator account ${email}. The password was stored only as a salted PBKDF2 hash.\n`);
   } catch (error) {
