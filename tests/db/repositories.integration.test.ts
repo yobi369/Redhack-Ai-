@@ -11,6 +11,7 @@ import {
   listEvidence,
   listIncidents,
   rollbackIncidentAction,
+  transitionFinding,
 } from "../../src/db/repositories";
 
 const enabled = Boolean(process.env.DATABASE_URL);
@@ -23,6 +24,7 @@ const roleId = `it-role-${suffix}`;
 const userA = `it-user-a-${suffix}`;
 const userB = `it-user-b-${suffix}`;
 const incidentId = `it-incident-${suffix}`;
+const findingId = `it-finding-${suffix}`;
 let createdAssetId: string | undefined;
 
 suite("PostgreSQL tenant-scoped domain repositories", () => {
@@ -52,6 +54,12 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     await pool.query(
       "INSERT INTO user_workspace_memberships (user_id, workspace_id, role_id) VALUES ($1, $2, $3), ($4, $2, $3), ($4, $5, $3)",
       [userA, workspaceA, roleId, userB, workspaceB]
+    );
+    await pool.query(
+      `INSERT INTO findings
+        (id, workspace_id, title, severity, confidence, lifecycle_status, explanation, business_impact, recommended_remediation)
+       VALUES ($1, $2, 'Integration finding', 'HIGH', 'HIGH', 'DISCOVERED', 'Synthetic test finding', 'No production impact', 'Apply test remediation')`,
+      [findingId, workspaceA]
     );
     await pool.query(
       `INSERT INTO incidents (id, workspace_id, title, severity, status, containment_actions)
@@ -111,6 +119,32 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     expect(created.workspaceId).toBe(workspaceA);
     expect((await listAssets(workspaceA)).some((asset) => asset.id === created.id)).toBe(true);
     expect((await listAssets(workspaceB)).some((asset) => asset.id === created.id)).toBe(false);
+  });
+
+  it("persists finding lifecycle changes and audit history only in the owning workspace", async () => {
+    const confirmed = await transitionFinding(
+      findingId,
+      "CONFIRMED",
+      workspaceA,
+      userA,
+      "Integration evidence confirmed",
+    );
+    expect(confirmed?.lifecycleStatus).toBe("CONFIRMED");
+    expect(confirmed?.validationStatus).toBe("EXPLOITABILITY_CONFIRMED");
+    expect(confirmed?.auditTrail.at(-1)?.actor).toBe(userA);
+    await expect(
+      transitionFinding(findingId, "RESOLVED", workspaceB, userA, "cross-tenant attempt"),
+    ).resolves.toBeNull();
+
+    const resolved = await transitionFinding(
+      findingId,
+      "RESOLVED",
+      workspaceA,
+      userB,
+      "Retest passed",
+    );
+    expect(resolved?.remediationStatus).toBe("VERIFIED_FIXED");
+    expect(resolved?.resolvedAt).toBeDefined();
   });
 
   it("persists evidence with a verified-format SHA-256 digest and workspace scope", async () => {
