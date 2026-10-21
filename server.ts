@@ -69,7 +69,7 @@ app.use("/api", authenticate as any);
 // When PostgreSQL is enabled, verify the signed identity's active membership in the selected workspace.
 app.use("/api", async (req: any, res, next) => {
   // The synthetic development/test session is not a production identity; production requires a bearer token when the database is configured.
-  if (!process.env.DATABASE_URL || !req.user || req.user.userId === "usr-session-operator") return next();
+  if (!process.env.DATABASE_URL || !req.user || (!req.headers.authorization?.startsWith("Bearer ") && req.user.userId === "usr-session-operator")) return next();
   try {
     const allowed = await assertWorkspaceMembership(
       req.user.userId,
