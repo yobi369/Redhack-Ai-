@@ -13,7 +13,7 @@ import {
 } from "./src/server/rbac";
 import { signAuthToken, hashPassword, verifyPassword, validateSafeUrl } from "./src/server/security";
 import { checkDatabaseHealth, getPostgresPool, runDatabaseMigrations } from "./src/db/postgres";
-import { assertWorkspaceMembership, listAssets, createAsset, listFindings, listIncidents, listEvidence, createEvidence, approveIncidentAction, executeIncidentAction, rollbackIncidentAction } from "./src/db/repositories";
+import { assertWorkspaceMembership, listAssets, createAsset, listFindings, transitionFinding, listIncidents, listEvidence, createEvidence, approveIncidentAction, executeIncidentAction, rollbackIncidentAction } from "./src/db/repositories";
 import { connectorRegistry } from "./src/server/integrations";
 import { productionAgentRunner } from "./src/server/agentRunner";
 
@@ -1353,18 +1353,27 @@ app.get("/api/v2/findings", async (req: any, res) => {
   }
 });
 
-app.post("/api/v2/findings/:id/transition", (req, res) => {
-  const { newStatus, actorName, notes } = req.body;
+app.post("/api/v2/findings/:id/transition", async (req: any, res) => {
+  const { newStatus, notes } = req.body;
   if (!newStatus) return res.status(400).json({ error: "newStatus is required" });
-  const updated = enterpriseStore.transitionFindingStatus(
-    req.params.id,
-    newStatus,
-    actorName || "SOC Analyst",
-    notes || "Status transitioned via SecOps console",
-    requestWorkspaceId(req)
-  );
-  if (!updated) return res.status(404).json({ error: "Finding not found" });
-  res.json(updated);
+  const actor = req.user?.userId;
+  if (!actor) return res.status(401).json({ error: "Authenticated actor required" });
+  try {
+    const workspaceId = requestWorkspaceId(req);
+    const updated = process.env.DATABASE_URL
+      ? await transitionFinding(req.params.id, newStatus, workspaceId, actor, notes || "Status transitioned via SecOps console")
+      : enterpriseStore.transitionFindingStatus(
+          req.params.id,
+          newStatus,
+          actor,
+          notes || "Status transitioned via SecOps console",
+          workspaceId
+        );
+    if (!updated) return res.status(404).json({ error: "Finding not found" });
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Unable to transition finding", code: "FINDING_TRANSITION_FAILED" });
+  }
 });
 
 // Unified Security Score
