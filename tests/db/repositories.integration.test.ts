@@ -15,7 +15,7 @@ const workspaceB = `it-ws-b-${suffix}`;
 const roleId = `it-role-${suffix}`;
 const userA = `it-user-a-${suffix}`;
 const userB = `it-user-b-${suffix}`;
-const assetId = `it-asset-${suffix}`;
+let createdAssetId: string | undefined;
 const incidentId = `it-incident-${suffix}`;
 
 suite("PostgreSQL tenant-scoped domain repositories", () => {
@@ -33,7 +33,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
         "INSERT INTO users (id,email,full_name,role_id,default_organization_id,default_workspace_id,is_active) VALUES ($1,$2,'User A',$3,$4,$5,TRUE),($6,$7,'User B',$3,$4,$5,TRUE)",
         [userA, `${userA}@example.test`, roleId, organizationId, workspaceA, userB, `${userB}@example.test`],
       );
-      await pool.query("INSERT INTO user_workspace_memberships (user_id,workspace_id,role_id) VALUES ($1,$2,$3),($4,$2,$3)", [userA, workspaceA, roleId, userB, workspaceB]);
+      await pool.query("INSERT INTO user_workspace_memberships (user_id,workspace_id,role_id) VALUES ($1,$2,$3),($4,$2,$3),($4,$5,$3)", [userA, workspaceA, roleId, userB, workspaceB]);
       await pool.query(
         `INSERT INTO incidents (id,workspace_id,title,severity,status,containment_actions)
          VALUES ($1,$2,'Integration containment','HIGH','ACTIVE',$3::jsonb)`,
@@ -51,7 +51,7 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
     await pool.query("DELETE FROM users WHERE id = ANY($1::varchar[])", [[userA, userB]]);
     await pool.query("DELETE FROM roles WHERE id = $1", [roleId]);
     await pool.query("DELETE FROM organizations WHERE id = $1", [organizationId]);
-    await pool.query("DELETE FROM assets WHERE id = $1", [assetId]);
+    if (createdAssetId) await pool.query("DELETE FROM assets WHERE id = $1", [createdAssetId]);
     await pool.query("DELETE FROM incidents WHERE id = $1", [incidentId]);
   });
 
@@ -63,12 +63,13 @@ suite("PostgreSQL tenant-scoped domain repositories", () => {
 
   it("persists assets and never returns another workspace's records", async () => {
     const created = await createAsset({
-      id: assetId, name: "Integration lab asset", assetType: "server",
+      name: "Integration lab asset", assetType: "server",
       exposure: "INTERNAL", businessCriticality: "LOW", ownerTeam: "Test",
       tags: ["integration"], isInTestingScope: false, securityScore: 80,
     }, workspaceA);
+    createdAssetId = created.id;
     expect(created.workspaceId).toBe(workspaceA);
-    expect((await listAssets(workspaceA)).some((asset) => asset.id === assetId)).toBe(true);
+    expect((await listAssets(workspaceA)).some((asset) => asset.id === created.id)).toBe(true);
     expect((await listAssets(workspaceB)).some((asset) => asset.id === assetId)).toBe(false);
   });
 
