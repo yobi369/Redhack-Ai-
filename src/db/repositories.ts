@@ -89,8 +89,16 @@ export async function createAsset(input: Partial<Asset>, workspaceId: string): P
   if (!input.name?.trim() || !input.assetType || !input.exposure || !input.businessCriticality) {
     throw new Error("name, assetType, exposure and businessCriticality are required");
   }
+  const pool = requiredPool();
+  if (input.projectId) {
+    const project = await pool.query(
+      "SELECT 1 FROM projects WHERE id = $1 AND workspace_id = $2",
+      [input.projectId, workspaceId],
+    );
+    if (project.rowCount !== 1) throw new Error("Project not found in this workspace");
+  }
   const id = randomUUID();
-  const result = await requiredPool().query(
+  const result = await pool.query(
     `INSERT INTO assets
       (id, workspace_id, project_id, name, asset_type, ip_address, hostname, cloud_provider,
        exposure, business_criticality, owner_team, tags, is_in_testing_scope, security_score)
