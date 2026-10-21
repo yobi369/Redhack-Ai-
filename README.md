@@ -10,7 +10,7 @@
 > *"Offense Builds Insight. Defense Builds Resilience. Know Both. Protect All."*  
 > *Authored in the spirit of TuChii Hunnid's ethical cybersecurity framework.*
 
-**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and workspace-level request isolation. Full customer-grade tenant isolation still depends on completing persistent, tenant-scoped domain repositories.
+**RedHack AI v2.1** is a modular Cyber Operations OS and multi-agent SecOps platform with explicit server-side authorization, auditable security workflows, and production-oriented engineering controls. Production use requires a configured PostgreSQL database and provisioned user credentials. Designed for enterprise security operations centers (SOC), purple teams, incident response responders, and threat researchers, RedHack combines real-time security posture assessment, telemetry ingestion, attack surface management, and autonomous AI agents operating under strict server-side RBAC, human approval gates, and workspace-level request isolation. Assets, findings, incidents, evidence, and containment-action state use tenant-scoped PostgreSQL repositories when `DATABASE_URL` is configured. Database-backed workspace membership is checked on authenticated API requests. Remaining domain objects and the legacy telemetry/demo stores are not yet fully migrated.
 
 ---
 
@@ -32,7 +32,7 @@
 
 - **Unified Security Graph:** Connects Assets $\to$ Users $\to$ Applications $\to$ Cloud Workloads $\to$ Vulnerabilities $\to$ Threats $\to$ Alerts $\to$ Incidents.
 - **Server-Side API Authorization:** API reads and writes are checked against a server-owned role/permission map; unknown mutation routes fail closed. Core v2 workspace operations use the authenticated token's workspace context. Complete persistence-backed membership enforcement remains a prerequisite for handling real customer tenants.
-- **Data Layer Status:** PostgreSQL connection pooling and versioned schema migrations are available. The current domain store still includes seeded in-memory data; do not treat it as durable production SOC storage until domain repositories are migrated to PostgreSQL.
+- **Data Layer Status:** PostgreSQL connection pooling, versioned migrations, and tenant-scoped repositories persist assets, findings, incidents, evidence, and containment-action transitions. Authenticated API access checks active workspace membership in PostgreSQL. Legacy telemetry, some reports, agent runs, and other demo-oriented stores remain in-memory and must not be represented as fully durable.
 - **Mandatory Human-in-the-Loop Gates:** Destructive or high-impact actions (host quarantine, firewall block, scope change) pause for human review with automated rollback plans.
 - **Prompt Injection Heuristic:** Regex-based screening flags common adversarial phrases. This is a defense-in-depth signal, not a guarantee against prompt injection; tool permissions and human approval remain the security boundary.
 - **SSRF URL Screening:** The current URL validator blocks common metadata, loopback, and private IPv4 targets. DNS resolution/rebinding and redirect handling must be enforced by any network-fetching integration before treating it as a complete SSRF defense.
@@ -110,7 +110,7 @@ npm run user:provision
 unset REDHACK_BOOTSTRAP_PASSWORD REDHACK_BOOTSTRAP_EMAIL REDHACK_BOOTSTRAP_NAME
 ```
 
-The provisioning command refuses to overwrite an existing account. Production authentication is unavailable until persistent storage and credentials are configured. Production must never run with the in-memory fallback; `/readyz` returns HTTP 503 when PostgreSQL is not configured or cannot be reached.
+The provisioning command refuses to overwrite an existing account. Production authentication requires PostgreSQL, provisioned credentials, and an explicit workspace membership. The migration backfills memberships for existing active users' default workspaces. Production must never run with the in-memory fallback; `/readyz` returns HTTP 503 when PostgreSQL is not configured or cannot be reached.
 
 ## 4. Automated Testing & Coverage Architecture
 
