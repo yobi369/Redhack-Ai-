@@ -182,7 +182,7 @@ npm run format
 - `POST /api/soar/approve` — Records an approval decision; does not execute the action.
 - `POST /api/soar/execute` — Records a separate execution state only after approval and requires a different authenticated operator. This demo endpoint does not claim to invoke an external security connector.
 - `POST /api/soar/rollback` — Records rollback state only for an action already marked executed.
-- `GET /api/governance/audit-logs` — Immutable audit trail of administrative and agent operations.
+- `GET /api/governance/audit-logs` — Administrative and agent audit events; current in-memory events are not durable or tamper-proof.
 
 ---
 
