@@ -116,15 +116,13 @@ The provisioning command refuses to overwrite an existing account. Production au
 
 RedHack AI v2.1 uses **Vitest** for unit/integration/security regression tests and retains legacy platform verification runners. The CI workflow runs both layers and enforces configured V8 coverage thresholds. Treat the latest successful workflow run as the source of truth for pass/fail counts; this document is not a live test report.
 
-| Test Layer | Framework / Runner | Test Count | Status |
-| :--- | :--- | :---: | :---: |
-| **Unit Tests (Security, RBAC, RateLimiter, Config)** | Vitest (v8) | 29 | **PASS** |
-| **Integration Tests (API, DB, AgentRunner)** | Vitest (v8) | 16 | **PASS** |
-| **Security Regression Suite (SSRF, Defect Gates)** | Vitest (v8) | 8 | **PASS** |
-| **Platform Verification Suite (CVSS, STIX, Scope)** | Node TSX Runner | 34 | **PASS** |
-| **Production Hardening Verification Suite** | Node TSX Runner | 22 | **PASS** |
-| **TOTAL PLATFORM TESTS** | | Run `npm test` | See current CI result |
-
+| Test Layer | Framework / Runner | Evidence |
+| :--- | :--- | :--- |
+| **Unit and security tests** | Vitest with V8 coverage | See the candidate commit's CI output and coverage artifact |
+| **Integration tests** | Vitest | See the candidate commit's CI output |
+| **Platform regression checks** | Node TSX runner | See the candidate commit's CI output |
+| **Production hardening checks** | Node TSX runner | See the candidate commit's CI output |
+| **Overall verification** | `npm test` | A passing result must be confirmed for the exact commit being evaluated |
 ### Running Tests
 Test counts and coverage are intentionally not treated as static guarantees. Run the commands below against the exact commit being evaluated and retain the CI result as evidence.
 
