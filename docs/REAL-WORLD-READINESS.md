@@ -98,12 +98,14 @@ This review prioritizes authorization, authentication, resource limits, SSRF, se
 
 ## Deployment routing remediation (2026-10-26)
 
-- [x] Added `api/handler.ts` as the canonical Vercel entrypoint importing the current `server.ts` Express application.
-- [x] Updated `vercel.json` so API rewrites target `/api/handler.ts`, avoiding reliance on the checked-in generated `api/index.js` bundle that was observed to contain stale security/readiness logic.
-- [ ] Confirm a fresh Vercel build succeeds and the production alias is running the commit containing this routing change.
-- [ ] Re-test `/api/readyz`: with no `DATABASE_URL` in a production Vercel runtime it must return HTTP 503 / `NOT_READY`, never `READY` with in-memory storage.
-- [ ] Re-test protected routes without a bearer token: they must fail closed; do not treat `x-dev-role` or `x-workspace-id` headers as production authentication.
-- [ ] Configure a free, reachable PostgreSQL service and strong unique `JWT_SECRET` before expecting readiness to pass. Do not add paid resources or use synthetic/demo data for operational records.
+- [x] Updated `vercel.json` so all `/api/*` requests route to `/api/index`.
+- [x] Confirmed the Vercel build command runs `npm run build`, which regenerates `api/index.js` from the checked-in `server.ts` before deployment. This makes the generated server bundle reproducible rather than trusting a stale checked-in bundle.
+- [x] Confirmed a fresh Vercel preview deployment from commit `ab6495464e67eca0d321e8655b944a53f8a9a49e` reached deployment state `READY`; this preview predates the final routing adjustment in this section.
+- [ ] Trigger and confirm a fresh build from the current main commit after the routing adjustment.
+- [ ] Verify live API behavior on a deployment URL that can be accessed without Vercel SSO protection.
+- [ ] Verify `/api/readyz` returns HTTP 503 / `NOT_READY` in a production runtime without `DATABASE_URL`; it must not return `READY` with in-memory storage.
+- [ ] Verify protected API routes reject requests without a valid bearer token.
+- [ ] Configure a free, reachable PostgreSQL service and a strong unique `JWT_SECRET` before expecting production readiness to pass. Do not add paid resources or use synthetic/demo data for operational records.
 
-**Current deployment conclusion:** Source routing has been corrected in GitHub, but this is not proof that Vercel has rebuilt or deployed it. The hosted alias must remain classified as unverified until its deployed commit and live readiness/authentication behavior are checked again.
+**Current deployment conclusion:** The source routing is corrected in GitHub and a preview build completed successfully before the latest routing adjustment. The public production alias has not been proven to run the latest source or pass live authentication/persistence checks. Keep it classified as unverified until those checks pass.
 
