@@ -95,3 +95,15 @@ Next, run authenticated positive and negative API tests using two test users in 
 ## External baseline
 
 This review prioritizes authorization, authentication, resource limits, SSRF, security configuration and logging concerns described in the [OWASP API Security Top 10](https://devguide.owasp.org/en/07-training-education/07-api-top-ten/) and [OWASP Multi-Tenant Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html).
+
+## Deployment routing remediation (2026-10-26)
+
+- [x] Added `api/handler.ts` as the canonical Vercel entrypoint importing the current `server.ts` Express application.
+- [x] Updated `vercel.json` so API rewrites target `/api/handler.ts`, avoiding reliance on the checked-in generated `api/index.js` bundle that was observed to contain stale security/readiness logic.
+- [ ] Confirm a fresh Vercel build succeeds and the production alias is running the commit containing this routing change.
+- [ ] Re-test `/api/readyz`: with no `DATABASE_URL` in a production Vercel runtime it must return HTTP 503 / `NOT_READY`, never `READY` with in-memory storage.
+- [ ] Re-test protected routes without a bearer token: they must fail closed; do not treat `x-dev-role` or `x-workspace-id` headers as production authentication.
+- [ ] Configure a free, reachable PostgreSQL service and strong unique `JWT_SECRET` before expecting readiness to pass. Do not add paid resources or use synthetic/demo data for operational records.
+
+**Current deployment conclusion:** Source routing has been corrected in GitHub, but this is not proof that Vercel has rebuilt or deployed it. The hosted alias must remain classified as unverified until its deployed commit and live readiness/authentication behavior are checked again.
+
