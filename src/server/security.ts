@@ -10,7 +10,10 @@ import { isIP } from "node:net";
  * Treat a Vercel production deployment as production even if NODE_ENV is absent.
  */
 export function isProductionRuntime(): boolean {
-  return process.env.NODE_ENV?.toLowerCase() === "production" || process.env.VERCEL_ENV?.toLowerCase() === "production";
+  return (
+    process.env.NODE_ENV?.toLowerCase() === "production" ||
+    process.env.VERCEL_ENV?.toLowerCase() === "production"
+  );
 }
 
 const INSECURE_PLACEHOLDER_SECRETS = new Set([
@@ -26,7 +29,7 @@ let _ephemeralDevelopmentSecret: string | null = null;
 
 /**
  * Returns a cryptographically validated JWT secret.
- * In production (NODE_ENV=production), an explicit, strong secret (>= 32 chars) is strictly enforced.
+ * In a production runtime, an explicit, strong secret (>= 32 chars) is strictly enforced.
  * In testing and development, an ephemeral process-bound random key is generated if unset.
  */
 export function getJwtSecret(): string {
