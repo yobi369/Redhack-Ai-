@@ -90,7 +90,9 @@ export function validateEnvironment(): ConfigValidationResult {
 }
 
 export function getConfig(): ServerConfig {
-  const rawEnv = (isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase());
+  const rawEnv = isProductionRuntime()
+    ? "production"
+    : (process.env.NODE_ENV || "development").toLowerCase();
   const nodeEnv = (
     rawEnv === "production" ? "production" : rawEnv === "test" ? "test" : "development"
   ) as ServerConfig["nodeEnv"];
