@@ -20,6 +20,7 @@ import { productionAgentRunner } from "./src/server/agentRunner";
 import helmet from "helmet";
 import { logger, generateCorrelationId } from "./src/server/logger";
 import { validateEnvironment, getConfig } from "./src/server/config";
+import { isProductionRuntime } from "./src/server/security";
 import { healthRouter } from "./src/server/routes/health";
 
 dotenv.config();
@@ -1632,7 +1633,7 @@ app.post("/api/v2/auth/login", authRateLimiter.middleware(15, 60000), async (req
       logger.error("Authentication database query failed", error);
       return res.status(503).json({ error: "Authentication service temporarily unavailable", code: "AUTH_STORE_ERROR" });
     }
-  } else if (process.env.NODE_ENV === "production") {
+  } else if (isProductionRuntime()) {
     // Production authentication must never fall back to the in-memory demo identity store.
     return res.status(503).json({
       error: "Persistent authentication storage is not configured",
@@ -1768,7 +1769,7 @@ app.post("/api/v2/integrations/:id/sync", async (req: any, res) => {
 app.use((err: any, req: any, res: any, next: any) => {
   const correlationId = req.headers["x-correlation-id"] || "unknown";
   logger.error("API Request Unhandled Error", err, { correlationId, path: req.path, method: req.method });
-  const isDev = process.env.NODE_ENV !== "production";
+  const isDev = !isProductionRuntime();
   res.status(err.status || 500).json({
     error: isDev ? err.message : "Internal Server Error",
     code: err.code || "INTERNAL_ERROR",
@@ -1781,7 +1782,7 @@ async function setupVite() {
   const validation = validateEnvironment();
   if (!validation.valid) {
     logger.error("Fatal startup configuration errors detected:", undefined, { errors: validation.errors });
-    if (process.env.NODE_ENV === "production") {
+    if (isProductionRuntime()) {
       logger.error("Startup aborted due to invalid production security configuration.");
       process.exit(1);
     }
@@ -1791,7 +1792,7 @@ async function setupVite() {
     validation.warnings.forEach((warn) => logger.warn(`Configuration warning: ${warn}`));
   }
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProductionRuntime()) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
