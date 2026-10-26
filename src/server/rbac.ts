@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Request, Response, NextFunction } from "express";
-import { verifyAuthToken, AuthTokenPayload } from "./security";
+import { verifyAuthToken, AuthTokenPayload, isProductionRuntime } from "./security";
 
 // Extend Express Request with Authenticated Context
 export interface AuthenticatedRequest extends Request {
@@ -183,7 +183,13 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
   // If persistent auth is not configured, allow only a read-only auditor session for
   // the public demo. No caller-supplied identity headers are trusted and all writes
   // remain denied by the role policy. With a database configured, a bearer token is mandatory.
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionRuntime()) {
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({
+        error: "Production authentication is unavailable because PostgreSQL is not configured",
+        code: "PRODUCTION_STORAGE_NOT_CONFIGURED",
+      });
+    }
     if (!process.env.DATABASE_URL && (req.method === "GET" || req.method === "HEAD")) {
       req.user = {
         userId: "readonly-demo",
