@@ -33,9 +33,7 @@ export function validateEnvironment(): ConfigValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const rawEnv = isProductionRuntime()
-  ? "production"
-  : (process.env.NODE_ENV || "development").toLowerCase();
+  const rawEnv = isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase();
   const isProduction = isProductionRuntime();
   const isTest = rawEnv === "test";
 
@@ -90,9 +88,7 @@ export function validateEnvironment(): ConfigValidationResult {
 }
 
 export function getConfig(): ServerConfig {
-  const rawEnv = isProductionRuntime()
-  ? "production"
-  : (process.env.NODE_ENV || "development").toLowerCase();
+  const rawEnv = isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase();
   const nodeEnv = (
     rawEnv === "production" ? "production" : rawEnv === "test" ? "test" : "development"
   ) as ServerConfig["nodeEnv"];
