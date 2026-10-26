@@ -12,10 +12,10 @@ The repository has substantial engineering controls: a committed npm lockfile, C
 
 ## Evidence reviewed
 
-- Default branch: `main`; latest inspected main commit: `1c9df8ba6deaa5b1b5d5ce6a7fc947acdbb9db4e`.
-- GitHub Actions run 122 for that main commit completed successfully on 2026-10-21: [workflow run](https://github.com/yobi369/Redhack-Ai-/actions/runs/39595310582).
+- Default branch: `main`; readiness-review commit: `94a364a8bdc6670991a8555005091d292ebab685`; subsequent security-fix commits: `84f9f696aaf75287fbbaaeb13771c955d712a7f6` and `56c9543a92445e66cace521a518727285689a6d0`.
+- GitHub Actions run 122 passed on 2026-10-21: [workflow run](https://github.com/yobi369/Redhack-Ai-/actions/runs/39595310582). The 2026-10-26 run exposed a high-severity `body-parser` advisory (GHSA-27r3-jxmh-p828 / CVE-2026-111181). The lockfile has now been updated to `body-parser` 1.20.9 with its published integrity hash, and compressed JSON bodies are temporarily rejected until the full candidate passes CI. [Latest security-fix CI run](https://github.com/yobi369/Redhack-Ai-/actions/runs/40286120179).
 - The latest listed dependency-update PR checks (runs 123–126, 2026-10-25) failed. These are dependency PR branches, not proof that the current main branch is failing. Review their logs before merging any updates.
-- Source inspection confirms global API middleware for authentication, tenant isolation and permission policy; PostgreSQL workspace membership is checked when the database is configured.
+- Source inspection confirms global API middleware for authentication, tenant isolation and permission policy; PostgreSQL workspace membership is checked when the database is configured. Live `GET https://redhack-ai.vercel.app/api/healthz` returned HTTP 200 (`ALIVE`) on 2026-10-26. This proves liveness only, not readiness or authorization correctness.
 - The README explicitly says several legacy telemetry/demo stores and some domain objects are still in-memory. Audit events described as in-memory are not durable or tamper-proof.
 - The README's documented container smoke test and CI run are useful automation, but do not establish that the current hosted deployment is correctly configured or secure.
 
@@ -46,6 +46,13 @@ The repository has substantial engineering controls: a committed npm lockfile, C
 - [ ] Add API contract tests and cross-tenant negative tests for each tenant-owned resource and privileged route.
 - [ ] Run dependency/security checks and review the failed Dependabot PR logs before merging major-version updates.
 - [ ] Validate graceful shutdown, database outage behavior, backup restore, alerting, resource limits and rollback to the previous deployment.
+
+## New security remediation (2026-10-26)
+
+- [x] Update locked `body-parser` from 1.20.8 to patched 1.20.9, preserving the package integrity hash.
+- [x] Temporarily reject compressed JSON request bodies (`inflate: false`) to close the vulnerable decompression path while the fix is validated. API clients should send uncompressed JSON.
+- [ ] Verify the latest security-fix CI run passes dependency audit, lint/type-check, coverage tests, legacy regression suites, build and container smoke test.
+- [ ] Verify the live Vercel production alias points to the reviewed commit; the most recent deployment metadata previously showed a different commit from current `main`.
 
 ## Immediate smoke-test sequence
 
