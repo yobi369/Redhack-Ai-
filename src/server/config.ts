@@ -2,7 +2,7 @@
 // REDHACK AI v2.1 - Production Environment Configuration & Validation
 // ============================================================================
 
-import { getJwtSecret } from "./security";
+import { getJwtSecret, isProductionRuntime } from "./security";
 
 export interface ServerConfig {
   nodeEnv: "production" | "development" | "test";
@@ -33,8 +33,8 @@ export function validateEnvironment(): ConfigValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const rawEnv = (process.env.NODE_ENV || "development").toLowerCase();
-  const isProduction = rawEnv === "production";
+  const rawEnv = (isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase());
+  const isProduction = isProductionRuntime();
   const isTest = rawEnv === "test";
 
   // 1. Port validation
@@ -88,7 +88,7 @@ export function validateEnvironment(): ConfigValidationResult {
 }
 
 export function getConfig(): ServerConfig {
-  const rawEnv = (process.env.NODE_ENV || "development").toLowerCase();
+  const rawEnv = (isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase());
   const nodeEnv = (
     rawEnv === "production" ? "production" : rawEnv === "test" ? "test" : "development"
   ) as ServerConfig["nodeEnv"];
