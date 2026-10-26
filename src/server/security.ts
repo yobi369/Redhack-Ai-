@@ -5,6 +5,14 @@
 import crypto from "crypto";
 import { isIP } from "node:net";
 
+/**
+ * Hosting platforms may set VERCEL_ENV independently of NODE_ENV.
+ * Treat a Vercel production deployment as production even if NODE_ENV is absent.
+ */
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV?.toLowerCase() === "production" || process.env.VERCEL_ENV?.toLowerCase() === "production";
+}
+
 const INSECURE_PLACEHOLDER_SECRETS = new Set([
   "redhack-production-enterprise-secret-salt-2026",
   "replace-with-cryptographically-secure-random-string-in-production",
@@ -23,7 +31,7 @@ let _ephemeralDevelopmentSecret: string | null = null;
  */
 export function getJwtSecret(): string {
   const envSecret = process.env.JWT_SECRET?.trim();
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = isProductionRuntime();
 
   if (isProduction) {
     if (!envSecret || envSecret.length < 32 || INSECURE_PLACEHOLDER_SECRETS.has(envSecret)) {
