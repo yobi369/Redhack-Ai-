@@ -33,7 +33,9 @@ export function validateEnvironment(): ConfigValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const rawEnv = (isProductionRuntime() ? "production" : (process.env.NODE_ENV || "development").toLowerCase());
+  const rawEnv = isProductionRuntime()
+    ? "production"
+    : (process.env.NODE_ENV || "development").toLowerCase();
   const isProduction = isProductionRuntime();
   const isTest = rawEnv === "test";
 
