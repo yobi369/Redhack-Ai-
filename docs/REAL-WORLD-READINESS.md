@@ -100,8 +100,8 @@ This review prioritizes authorization, authentication, resource limits, SSRF, se
 
 - [x] Updated `vercel.json` so all `/api/*` requests route to `/api/index`.
 - [x] Confirmed the Vercel build command runs `npm run build`, which regenerates `api/index.js` from the checked-in `server.ts` before deployment. This makes the generated server bundle reproducible rather than trusting a stale checked-in bundle.
-- [x] Confirmed a fresh Vercel preview deployment from commit `ab6495464e67eca0d321e8655b944a53f8a9a49e` reached deployment state `READY`; this preview predates the final routing adjustment in this section.
-- [ ] Trigger and confirm a fresh build from the current main commit after the routing adjustment.
+- [x] Confirmed a fresh Vercel preview build from current main commit `21547097bef099d4a8fa7fbbc50cc03c3d51d6c0` reached deployment state `READY`; Vercel build logs show the Vite frontend and generated `api/index.js` bundle completed. The preview's live API could not be checked because deployment protection blocked automated access.
+- [x] Triggered and confirmed a fresh build from the current main commit after the routing adjustment.
 - [ ] Verify live API behavior on a deployment URL that can be accessed without Vercel SSO protection.
 - [ ] Verify `/api/readyz` returns HTTP 503 / `NOT_READY` in a production runtime without `DATABASE_URL`; it must not return `READY` with in-memory storage.
 - [ ] Verify protected API routes reject requests without a valid bearer token.
