@@ -10,7 +10,10 @@ import { isIP } from "node:net";
  * Treat a Vercel production deployment as production even if NODE_ENV is absent.
  */
 export function isProductionRuntime(): boolean {
-  return process.env.NODE_ENV?.toLowerCase() === "production" || process.env.VERCEL_ENV?.toLowerCase() === "production";
+  return (
+  process.env.NODE_ENV?.toLowerCase() === "production" ||
+  process.env.VERCEL_ENV?.toLowerCase() === "production"
+  );
 }
 
 const INSECURE_PLACEHOLDER_SECRETS = new Set([
