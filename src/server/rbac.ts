@@ -180,9 +180,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
     return next();
   }
 
-  // If persistent auth is not configured, allow only a read-only auditor session for
-  // the public demo. No caller-supplied identity headers are trusted and all writes
-  // remain denied by the role policy. With a database configured, a bearer token is mandatory.
+  // Production must fail closed: no synthetic/demo identity is allowed.
   if (isProductionRuntime()) {
     if (!process.env.DATABASE_URL) {
       return res.status(503).json({
@@ -190,24 +188,6 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
         code: "PRODUCTION_STORAGE_NOT_CONFIGURED",
       });
     }
-    if (!process.env.DATABASE_URL && (req.method === "GET" || req.method === "HEAD")) {
-      req.user = {
-        userId: "readonly-demo",
-        email: "readonly-demo@localhost",
-        role: "SECURITY_AUDITOR",
-        organizationId: "org-defense-corp",
-        workspaceId: "ws-prod-defense",
-        permissions: ROLE_PERMISSIONS_MAP.SECURITY_AUDITOR,
-        exp: Math.floor(Date.now() / 1000) + 300,
-        iat: Math.floor(Date.now() / 1000),
-      };
-      req.tenantContext = {
-        organizationId: "org-defense-corp",
-        workspaceId: "ws-prod-defense",
-      };
-      return next();
-    }
-
     return res.status(401).json({
       error: "Unauthorized: a valid bearer token is required",
       code: "AUTH_REQUIRED",
