@@ -55,7 +55,11 @@ app.use(
 );
 
 // JSON Body Parser with safe payload limit
-app.use(express.json({ limit: "5mb" }));
+// Temporary mitigation for GHSA-27r3-jxmh-p828 / CVE-2026-111181:
+// reject compressed request bodies until the lockfile's body-parser is upgraded
+// to >=1.20.9. This prevents the vulnerable decompression path; clients should
+// send uncompressed JSON. Keep the npm audit CI gate enabled.
+app.use(express.json({ limit: "5mb", inflate: false }));
 
 // Public liveness/readiness probes; keep them outside the authenticated API chain.
 app.use(healthRouter);
